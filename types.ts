@@ -1,5 +1,5 @@
 export type PodcastLength = 'Short' | 'Medium' | 'Long';
-export type PodcastLanguage = 'English' | 'French' | 'Darija';
+export type PodcastLanguage = 'English' | 'French' | 'FrenchCA' | 'Darija' | 'Arabic' | 'Spanish' | 'Chinese';
 
 export interface ScriptLine {
   speaker: string;
@@ -18,6 +18,13 @@ export interface PodcastSession {
   duration?: number;
   length: PodcastLength;
   language: PodcastLanguage;
+  // Customization
+  customTitle?: string;
+  customInstructions?: string;
+  host1?: string;
+  host2?: string;
+  host1Voice?: string;
+  host2Voice?: string;
 }
 
 export interface SpeakerConfig {

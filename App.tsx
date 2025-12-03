@@ -6,16 +6,18 @@ import ApiKeyInput from './components/ApiKeyInput';
 import HistorySidebar from './components/HistorySidebar';
 import Player from './components/Player';
 import Transcript from './components/Transcript';
-import { Headphones, Sparkles, MessageSquare, Menu, X, Linkedin, Clock, Globe, ChevronDown, Check } from 'lucide-react';
+import { Headphones, Sparkles, MessageSquare, Menu, X, Linkedin, Clock, Globe, ChevronDown, Check, Settings, Mic2, FileText, User, Music } from 'lucide-react';
 
 interface DropdownProps {
   value: string;
   onChange: (value: string) => void;
   options: { label: string; value: string }[];
   icon: React.ReactNode;
+  label?: string;
+  placeholder?: string;
 }
 
-const CustomDropdown: React.FC<DropdownProps> = ({ value, onChange, options, icon }) => {
+const CustomDropdown: React.FC<DropdownProps> = ({ value, onChange, options, icon, label, placeholder }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -29,24 +31,27 @@ const CustomDropdown: React.FC<DropdownProps> = ({ value, onChange, options, ico
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selectedLabel = options.find(o => o.value === value)?.label || value;
+  const selectedLabel = options.find(o => o.value === value)?.label || placeholder || value;
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative w-full" ref={containerRef}>
+      {label && <label className="text-xs font-semibold text-slate-400 mb-1 block">{label}</label>}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all border outline-none ${
-            isOpen ? 'bg-slate-800 border-slate-700 text-white' : 'bg-transparent border-transparent text-slate-300 hover:text-white hover:bg-slate-800/50'
+        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all border outline-none text-left ${
+            isOpen ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800'
         }`}
       >
-        {icon}
-        <span className="font-medium text-sm">{selectedLabel}</span>
-        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        <div className="flex items-center gap-2">
+           {icon}
+           <span className="font-medium text-sm truncate">{selectedLabel}</span>
+        </div>
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-100 ring-1 ring-white/5">
-          <div className="py-1">
+        <div className="absolute top-full left-0 mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-100 ring-1 ring-white/5">
+          <div className="py-1 max-h-60 overflow-y-auto">
             {options.map((option) => (
               <button
                 key={option.value}
@@ -71,6 +76,14 @@ const CustomDropdown: React.FC<DropdownProps> = ({ value, onChange, options, ico
   );
 };
 
+const VOICE_OPTIONS = [
+  { label: 'Puck (Male)', value: 'Puck' },
+  { label: 'Charon (Male - Deep)', value: 'Charon' },
+  { label: 'Fenrir (Male - Deep)', value: 'Fenrir' },
+  { label: 'Kore (Female)', value: 'Kore' },
+  { label: 'Zephyr (Female)', value: 'Zephyr' },
+];
+
 const App: React.FC = () => {
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [history, setHistory] = useState<PodcastSession[]>([]);
@@ -84,6 +97,15 @@ const App: React.FC = () => {
   // Options
   const [length, setLength] = useState<PodcastLength>('Medium');
   const [language, setLanguage] = useState<PodcastLanguage>('English');
+  
+  // Customization
+  const [showSettings, setShowSettings] = useState(false);
+  const [customTitle, setCustomTitle] = useState('');
+  const [customInstructions, setCustomInstructions] = useState('');
+  const [host1, setHost1] = useState('');
+  const [host2, setHost2] = useState('');
+  const [host1Voice, setHost1Voice] = useState('');
+  const [host2Voice, setHost2Voice] = useState('');
 
   // Load state from local storage on mount
   useEffect(() => {
@@ -119,7 +141,18 @@ const App: React.FC = () => {
 
     try {
       // 1. Generate Script
-      const { title, script, lines } = await generatePodcastScript(apiKey, inputValue, length, language);
+      const { title, script, lines, usedHost1, usedHost2 } = await generatePodcastScript(
+        apiKey, 
+        inputValue, 
+        length, 
+        language,
+        {
+          customTitle: customTitle.trim() || undefined,
+          customInstructions: customInstructions.trim() || undefined,
+          host1: host1.trim() || undefined,
+          host2: host2.trim() || undefined
+        }
+      );
       
       const newSession: PodcastSession = {
         id: Date.now().toString(),
@@ -129,16 +162,28 @@ const App: React.FC = () => {
         scriptLines: lines,
         createdAt: Date.now(),
         length,
-        language
+        language,
+        customTitle: customTitle.trim() || undefined,
+        customInstructions: customInstructions.trim() || undefined,
+        host1: usedHost1,
+        host2: usedHost2,
+        host1Voice: host1Voice || undefined,
+        host2Voice: host2Voice || undefined
       };
 
       setCurrentSession(newSession);
-      // Optimistic update - will update again after audio for duration/timestamps
+      // Optimistic update
       setHistory(prev => [newSession, ...prev]);
 
       // 2. Generate Audio
       setGenerationState({ status: 'generating_audio' });
-      const audioData = await generatePodcastAudio(apiKey, script, language);
+      const audioData = await generatePodcastAudio(
+        apiKey, 
+        script, 
+        language, 
+        { host1: usedHost1, host2: usedHost2 },
+        { host1Voice: host1Voice, host2Voice: host2Voice }
+      );
       
       // 3. Decode to get duration and estimate timestamps
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -154,10 +199,12 @@ const App: React.FC = () => {
       };
 
       setCurrentSession(finalSession);
-      setHistory(prev => [finalSession, ...prev.filter(p => p.id !== finalSession.id)]); // Update history with full data
+      setHistory(prev => [finalSession, ...prev.filter(p => p.id !== finalSession.id)]); 
       setCurrentAudio(audioData);
       setGenerationState({ status: 'complete' });
-      setInputValue(''); // Clear input on success
+      setInputValue(''); 
+      // Reset settings
+      setShowSettings(false);
       
     } catch (error: any) {
       console.error(error);
@@ -173,10 +220,21 @@ const App: React.FC = () => {
     
     setGenerationState({ status: 'generating_audio' });
     try {
-      const audioData = await generatePodcastAudio(apiKey, currentSession.script, currentSession.language);
+      const audioData = await generatePodcastAudio(
+        apiKey, 
+        currentSession.script, 
+        currentSession.language,
+        { 
+            host1: currentSession.host1 || "Host 1", 
+            host2: currentSession.host2 || "Host 2" 
+        },
+        {
+          host1Voice: currentSession.host1Voice,
+          host2Voice: currentSession.host2Voice
+        }
+      );
       setCurrentAudio(audioData);
       
-      // Update timestamps if needed (e.g. if audio length changes slightly)
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const buffer = await decodeAudioData(new Uint8Array(audioData.buffer), audioCtx);
       const linesWithTimestamps = estimateTimestamps(currentSession.scriptLines, buffer.duration);
@@ -197,9 +255,14 @@ const App: React.FC = () => {
     setGenerationState({ status: 'idle' });
     setIsSidebarOpen(false); 
     setCurrentTime(0);
-    // Restore options from session
+    // Restore options
     if (session.length) setLength(session.length);
     if (session.language) setLanguage(session.language);
+    // Restore customization for quick edit (optional)
+    setHost1(session.host1 || '');
+    setHost2(session.host2 || '');
+    setHost1Voice(session.host1Voice || '');
+    setHost2Voice(session.host2Voice || '');
   };
 
   const deleteSession = (id: string) => {
@@ -289,32 +352,139 @@ const App: React.FC = () => {
                 />
                 
                 {/* Options Toolbar */}
-                <div className="px-4 py-3 bg-slate-900 border-t border-slate-800/50 flex flex-wrap items-center gap-6 text-sm relative z-20">
+                <div className="px-4 py-3 bg-slate-900 border-t border-slate-800/50 flex flex-wrap items-center gap-4 text-sm relative z-20">
                    
-                   <CustomDropdown 
-                      value={length}
-                      onChange={(val) => setLength(val as PodcastLength)}
-                      icon={<Clock className="w-4 h-4 text-brand-500" />}
-                      options={[
-                        { label: 'Short (~3 min)', value: 'Short' },
-                        { label: 'Medium (~5 min)', value: 'Medium' },
-                        { label: 'Long (~10 min)', value: 'Long' },
-                      ]}
-                   />
+                   <div className="w-40">
+                    <CustomDropdown 
+                        value={length}
+                        onChange={(val) => setLength(val as PodcastLength)}
+                        icon={<Clock className="w-4 h-4 text-brand-500" />}
+                        options={[
+                            { label: 'Short (~3 min)', value: 'Short' },
+                            { label: 'Medium (~5 min)', value: 'Medium' },
+                            { label: 'Long (~10 min)', value: 'Long' },
+                        ]}
+                    />
+                   </div>
 
                    <div className="w-px h-4 bg-slate-700 hidden sm:block"></div>
 
-                   <CustomDropdown 
-                      value={language}
-                      onChange={(val) => setLanguage(val as PodcastLanguage)}
-                      icon={<Globe className="w-4 h-4 text-brand-500" />}
-                      options={[
-                        { label: 'English', value: 'English' },
-                        { label: 'Français', value: 'French' },
-                        { label: 'Moroccan Darija', value: 'Darija' },
-                      ]}
-                   />
+                   <div className="w-48">
+                    <CustomDropdown 
+                        value={language}
+                        onChange={(val) => setLanguage(val as PodcastLanguage)}
+                        icon={<Globe className="w-4 h-4 text-brand-500" />}
+                        options={[
+                            { label: 'English', value: 'English' },
+                            { label: 'Français', value: 'French' },
+                            { label: 'Français (Canadien)', value: 'FrenchCA' },
+                            { label: 'Moroccan Darija', value: 'Darija' },
+                            { label: 'Arabic (Fusha)', value: 'Arabic' },
+                            { label: 'Español', value: 'Spanish' },
+                            { label: 'Chinese (Mandarin)', value: 'Chinese' },
+                        ]}
+                    />
+                   </div>
+
+                   <div className="ml-auto">
+                     <button
+                        onClick={() => setShowSettings(!showSettings)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-sm font-medium ${
+                            showSettings ? 'text-brand-400 bg-brand-500/10' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        }`}
+                     >
+                       <Settings className="w-4 h-4" />
+                       Podcast Settings
+                       <ChevronDown className={`w-3 h-3 transition-transform ${showSettings ? 'rotate-180' : ''}`} />
+                     </button>
+                   </div>
                 </div>
+
+                {/* Settings Panel */}
+                {showSettings && (
+                   <div className="px-6 py-4 bg-slate-800/50 border-t border-slate-700/50 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 animate-in slide-in-from-top-2">
+                      <div className="col-span-1 md:col-span-2 space-y-2">
+                        <label className="text-xs font-semibold text-slate-400 flex items-center gap-1">
+                           <FileText className="w-3 h-3" /> Title
+                        </label>
+                        <input 
+                           type="text" 
+                           value={customTitle}
+                           onChange={(e) => setCustomTitle(e.target.value)}
+                           placeholder="Auto-generated if empty"
+                           className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600"
+                        />
+                      </div>
+
+                      {/* Host 1 Config */}
+                      <div className="space-y-3 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
+                         <div className="flex items-center gap-2 text-brand-300 border-b border-slate-800 pb-2 mb-2">
+                            <User className="w-3.5 h-3.5" />
+                            <span className="text-xs font-bold uppercase tracking-wider">Host 1 (Lead)</span>
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-xs font-semibold text-slate-500">Name</label>
+                            <input 
+                              type="text" 
+                              value={host1}
+                              onChange={(e) => setHost1(e.target.value)}
+                              placeholder="e.g. Alex"
+                              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600"
+                            />
+                         </div>
+                         <div className="space-y-1">
+                             <CustomDropdown 
+                                value={host1Voice}
+                                onChange={setHost1Voice}
+                                icon={<Music className="w-3.5 h-3.5 text-slate-400" />}
+                                options={VOICE_OPTIONS}
+                                label="Voice"
+                                placeholder="Default Voice"
+                             />
+                         </div>
+                      </div>
+
+                      {/* Host 2 Config */}
+                      <div className="space-y-3 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
+                         <div className="flex items-center gap-2 text-emerald-300 border-b border-slate-800 pb-2 mb-2">
+                            <User className="w-3.5 h-3.5" />
+                            <span className="text-xs font-bold uppercase tracking-wider">Host 2 (Expert)</span>
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-xs font-semibold text-slate-500">Name</label>
+                            <input 
+                              type="text" 
+                              value={host2}
+                              onChange={(e) => setHost2(e.target.value)}
+                              placeholder="e.g. Sarah"
+                              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600"
+                            />
+                         </div>
+                         <div className="space-y-1">
+                             <CustomDropdown 
+                                value={host2Voice}
+                                onChange={setHost2Voice}
+                                icon={<Music className="w-3.5 h-3.5 text-slate-400" />}
+                                options={VOICE_OPTIONS}
+                                label="Voice"
+                                placeholder="Default Voice"
+                             />
+                         </div>
+                      </div>
+
+                      <div className="col-span-1 md:col-span-2 space-y-2">
+                        <label className="text-xs font-semibold text-slate-400 flex items-center gap-1">
+                           <Mic2 className="w-3 h-3" /> Custom Instructions
+                        </label>
+                        <textarea 
+                           value={customInstructions}
+                           onChange={(e) => setCustomInstructions(e.target.value)}
+                           placeholder="e.g. Make it funny, focus on the technical details, explain like I'm 5..."
+                           className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600 h-20 resize-none"
+                        />
+                      </div>
+                   </div>
+                )}
 
                 <div className="flex justify-between items-center px-4 pb-3 pt-2 bg-slate-900/50 rounded-b-xl border-t border-slate-800/50">
                   <span className="text-xs text-slate-500 flex items-center gap-1">

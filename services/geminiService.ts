@@ -3,8 +3,8 @@ import { decodeBase64 } from "../utils/audioUtils";
 import { ScriptLine, PodcastLength, PodcastLanguage } from "../types";
 
 interface CulturalConfig {
-  host1: string;
-  host2: string;
+  defaultHost1: string;
+  defaultHost2: string;
   voice1: string; // Gemini voice name
   voice2: string; // Gemini voice name
   context: string;
@@ -12,25 +12,53 @@ interface CulturalConfig {
 
 const CULTURAL_CONFIGS: Record<PodcastLanguage, CulturalConfig> = {
   'English': {
-    host1: "Alex",
-    host2: "Sarah",
+    defaultHost1: "Alex",
+    defaultHost2: "Sarah",
     voice1: "Puck",
     voice2: "Kore",
     context: "Silicon Valley tech podcast vibe. Energetic, global, professional but accessible. Use metaphors from the US tech scene."
   },
   'French': {
-    host1: "Thomas",
-    host2: "Clara",
+    defaultHost1: "Thomas",
+    defaultHost2: "Clara",
     voice1: "Fenrir",
     voice2: "Zephyr",
     context: "Parisian intellectual radio style (like France Inter). Thoughtful, articulate, slightly more formal but engaging. Use French cultural references and idioms."
   },
+  'FrenchCA': {
+    defaultHost1: "Jean-Luc",
+    defaultHost2: "Marie-Claude",
+    voice1: "Fenrir",
+    voice2: "Zephyr",
+    context: "Montreal tech scene vibe. Friendly, warm, using Quebecois idioms and expressions naturally. A mix of professional and casual ('tu' vs 'vous')."
+  },
   'Darija': {
-    host1: "Youssef",
-    host2: "Layla",
+    defaultHost1: "Mohamed Amine",
+    defaultHost2: "Ikhlas",
     voice1: "Charon",
     voice2: "Kore", 
     context: "A casual, energetic Moroccan tech talk (like GeeksBlabla). Speakers use Moroccan Darija (Arabic script) mixed with English/French technical terms (code-switching). They sound like friends chatting in a cafe in Casablanca. Use colloquialisms like 'Daba', 'Za3ma', 'Safi', 'Chouf', 'L3iba'. Tone: Insightful but fun and authentic."
+  },
+  'Arabic': {
+    defaultHost1: "Ahmed",
+    defaultHost2: "Fatima",
+    voice1: "Zephyr",
+    voice2: "Kore",
+    context: "Modern Standard Arabic (Fusha), professional news/analysis style (like Al Jazeera podcasts). Clear, articulate, formal but engaging. Use precise terminology."
+  },
+  'Spanish': {
+    defaultHost1: "Mateo",
+    defaultHost2: "Valentina",
+    voice1: "Puck",
+    voice2: "Kore",
+    context: "Madrid or Mexico City radio morning show. Fast-paced, passionate, energetic. Use clear Spanish with natural flow."
+  },
+  'Chinese': {
+    defaultHost1: "Wei",
+    defaultHost2: "Li",
+    voice1: "Fenrir",
+    voice2: "Zephyr",
+    context: "Professional tech discussion in Mandarin. Respectful, insightful, modern. Focus on clarity and depth."
   }
 };
 
@@ -46,30 +74,53 @@ const getLengthInstruction = (length: PodcastLength) => {
 const getLanguageInstruction = (lang: PodcastLanguage) => {
   switch (lang) {
     case 'French': return "The dialogue MUST be written in French.";
+    case 'FrenchCA': return "The dialogue MUST be written in French (Canadian/Quebecois standard).";
     case 'Darija': return "The dialogue MUST be written in Moroccan Arabic (Darija) using Arabic script. It is CRITICAL to mix in English/French technical terms naturally (e.g. 'Software', 'Cloud', 'Update'). Do not translate technical terms to standard Arabic.";
+    case 'Arabic': return "The dialogue MUST be written in Modern Standard Arabic.";
+    case 'Spanish': return "The dialogue MUST be written in Spanish.";
+    case 'Chinese': return "The dialogue MUST be written in Simplified Chinese.";
     default: return "The dialogue MUST be written in English.";
   }
 };
+
+export interface PodcastOptions {
+  customTitle?: string;
+  customInstructions?: string;
+  host1?: string;
+  host2?: string;
+  host1Voice?: string;
+  host2Voice?: string;
+}
 
 export const generatePodcastScript = async (
   apiKey: string, 
   input: string, 
   length: PodcastLength, 
-  language: PodcastLanguage
-): Promise<{ title: string; script: string; lines: ScriptLine[] }> => {
+  language: PodcastLanguage,
+  options?: PodcastOptions
+): Promise<{ title: string; script: string; lines: ScriptLine[]; usedHost1: string; usedHost2: string }> => {
   const ai = new GoogleGenAI({ apiKey });
   const config = CULTURAL_CONFIGS[language];
   
+  const host1 = options?.host1 || config.defaultHost1;
+  const host2 = options?.host2 || config.defaultHost2;
+
   const isUrl = /^https?:\/\//i.test(input.trim());
 
   let prompt = `
     You are an expert podcast producer. 
     Task: Create a lively, engaging, deep-dive podcast dialogue between two hosts:
-    1. ${config.host1} (Host): Curious, enthusiastic, guides the conversation.
-    2. ${config.host2} (Expert): Analytical, insightful, provides deep context.
+    1. ${host1} (Host): Curious, enthusiastic, guides the conversation.
+    2. ${host2} (Expert): Analytical, insightful, provides deep context.
     
     Cultural Context: ${config.context}
   `;
+
+  if (options?.customInstructions) {
+    prompt += `
+    Additional User Instructions: ${options.customInstructions}
+    `;
+  }
 
   if (isUrl) {
     prompt += `
@@ -84,16 +135,16 @@ export const generatePodcastScript = async (
     
   prompt += `
     Guidelines:
-    - Keep it conversational, use natural fillers appropriate for the language (e.g., "Right", "Exactly" for English; "C'est ça", "Effectivement" for French; "Wayyeh", "Fehal hakka" for Darija).
+    - Keep it conversational, use natural fillers appropriate for the language.
     - The output MUST be a valid script format where every line starts with the speaker's name followed by a colon.
-    - Also provide a catchy title for this episode on the very first line starting with "TITLE: ".
+    ${options?.customTitle ? `- The title of the podcast is "${options.customTitle}".` : '- Provide a catchy title for this episode on the very first line starting with "TITLE: ".'}
     - ${getLengthInstruction(length)}
     - ${getLanguageInstruction(language)}
     
     Output Format:
-    TITLE: [Catchy Title]
-    ${config.host1}: [Line]
-    ${config.host2}: [Line]
+    TITLE: ${options?.customTitle || "[Catchy Title]"}
+    ${host1}: [Line]
+    ${host2}: [Line]
     ...
   `;
 
@@ -114,7 +165,7 @@ export const generatePodcastScript = async (
 
   const rawText = response.text || "";
   const titleMatch = rawText.match(/^TITLE:\s*(.*)/m);
-  const title = titleMatch ? titleMatch[1].trim() : "Deep Dive Episode";
+  const title = titleMatch ? titleMatch[1].trim() : (options?.customTitle || "Deep Dive Episode");
   
   // Clean up the title line from the script body
   const script = rawText.replace(/^TITLE:.*\n?/, '').trim();
@@ -124,6 +175,7 @@ export const generatePodcastScript = async (
   const rawLines = script.split('\n');
   
   for (const line of rawLines) {
+    // Match "Speaker: Text" but handle potential spacing issues
     const match = line.match(/^([^:]+):\s*(.*)/);
     if (match) {
       lines.push({
@@ -135,16 +187,22 @@ export const generatePodcastScript = async (
     }
   }
 
-  return { title, script, lines };
+  return { title, script, lines, usedHost1: host1, usedHost2: host2 };
 };
 
 export const generatePodcastAudio = async (
   apiKey: string, 
   script: string,
-  language: PodcastLanguage
+  language: PodcastLanguage,
+  hosts: { host1: string, host2: string },
+  voices?: { host1Voice?: string, host2Voice?: string }
 ): Promise<Int16Array> => {
   const ai = new GoogleGenAI({ apiKey });
   const config = CULTURAL_CONFIGS[language];
+
+  // Use override voices if provided, otherwise default to cultural config
+  const voice1Name = voices?.host1Voice || config.voice1;
+  const voice2Name = voices?.host2Voice || config.voice2;
 
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-preview-tts",
@@ -155,12 +213,12 @@ export const generatePodcastAudio = async (
         multiSpeakerVoiceConfig: {
           speakerVoiceConfigs: [
             {
-              speaker: config.host1,
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voice1 } } 
+              speaker: hosts.host1,
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: voice1Name } } 
             },
             {
-              speaker: config.host2,
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voice2 } }
+              speaker: hosts.host2,
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: voice2Name } }
             }
           ]
         }

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { PodcastSession } from '../types';
 
 interface TranscriptProps {
@@ -8,15 +8,8 @@ interface TranscriptProps {
 
 const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll to active line
-  useEffect(() => {
-    if (!scrollRef.current) return;
-    const activeElement = scrollRef.current.querySelector('.active-transcript-line');
-    if (activeElement) {
-      activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [currentTime]);
+  const [isHovering, setIsHovering] = useState(false);
+  const [lastActiveIndex, setLastActiveIndex] = useState(-1);
 
   const lines = session.scriptLines || [];
 
@@ -30,10 +23,32 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
     };
   }, [lines]);
 
+  // Find active line index
+  const activeIndex = useMemo(() => {
+    return lines.findIndex(line => currentTime >= line.startTime && currentTime <= line.endTime);
+  }, [lines, currentTime]);
+
+  // Auto-scroll logic
+  useEffect(() => {
+    if (!scrollRef.current || isHovering || activeIndex === -1 || activeIndex === lastActiveIndex) return;
+    
+    setLastActiveIndex(activeIndex);
+    const activeElement = scrollRef.current.children[activeIndex];
+    
+    if (activeElement) {
+      activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [activeIndex, isHovering, lastActiveIndex]);
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col h-[500px]">
-      <div className="p-4 border-b border-slate-800 bg-slate-900/90 backdrop-blur-sm sticky top-0 z-10">
+    <div 
+      className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col h-[500px]"
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+    >
+      <div className="p-4 border-b border-slate-800 bg-slate-900/90 backdrop-blur-sm sticky top-0 z-10 flex justify-between items-center">
         <h3 className="font-semibold text-white">Transcript</h3>
+        {isHovering && <span className="text-xs text-slate-500 animate-pulse">Auto-scroll paused</span>}
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {lines.length === 0 ? (
@@ -41,18 +56,26 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
         ) : (
            lines.map((line, idx) => {
             const isHost1 = line.speaker === speakers.host1;
-            const isActive = currentTime >= line.startTime && currentTime <= line.endTime;
+            const isActive = idx === activeIndex;
             
             return (
               <div 
                 key={idx} 
                 className={`flex gap-3 transition-opacity duration-300 ${isHost1 ? 'flex-row' : 'flex-row-reverse'} ${isActive ? 'opacity-100 active-transcript-line' : 'opacity-60 hover:opacity-100'}`}
               >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-lg select-none ${
-                  isHost1 ? 'bg-brand-600 text-white' : 'bg-emerald-600 text-white'
-                } ${isActive ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110 transition-transform' : ''}`}>
-                  {line.speaker[0]}
+                <div className="flex flex-col items-center gap-1">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 shadow-lg select-none relative ${
+                    isHost1 ? 'bg-brand-600 text-white' : 'bg-emerald-600 text-white'
+                  } ${isActive ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110 transition-transform' : ''}`}>
+                    {line.speaker[0]}
+                  </div>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                     isHost1 ? 'bg-brand-900/50 text-brand-300' : 'bg-emerald-900/50 text-emerald-300'
+                  }`}>
+                    {isHost1 ? 'Host' : 'Guest'}
+                  </span>
                 </div>
+
                 <div className={`max-w-[80%] rounded-2xl p-3 text-sm leading-relaxed transition-all duration-300 ${
                   isHost1 
                     ? 'bg-slate-800 text-slate-200 rounded-tl-none' 
