@@ -40,6 +40,8 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
     }
   }, [activeIndex, isHovering, lastActiveIndex]);
 
+  const isRtlLanguage = session.language === 'Darija' || session.language === 'Arabic';
+
   return (
     <div 
       className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col h-[500px]"
@@ -80,11 +82,21 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
                   isHost1 
                     ? 'bg-slate-800 text-slate-200 rounded-tl-none' 
                     : 'bg-slate-800/50 text-slate-300 rounded-tr-none'
-                } ${isActive ? 'ring-1 ring-brand-500/50 bg-slate-700 shadow-lg' : ''} ${
-                    session.language === 'Darija' && /[\u0600-\u06FF]/.test(line.text) ? 'font-arabic text-right' : ''
-                }`}>
-                  <span className="block text-xs font-semibold opacity-50 mb-1">{line.speaker}</span>
-                  {line.text}
+                } ${isActive ? 'ring-1 ring-brand-500/50 bg-slate-700 shadow-lg' : ''}`}>
+                  <span className="block text-xs font-semibold opacity-50 mb-1 text-left">{line.speaker}</span>
+                  
+                  {/* 
+                    dir="auto" allows the browser to determine directionality per paragraph.
+                    unicodeBidi: 'plaintext' helps isolate the directionality of this specific block, 
+                    crucial for mixed Latin/Arabic (Darija). 
+                  */}
+                  <p 
+                    dir="auto" 
+                    style={{ unicodeBidi: 'plaintext' }}
+                    className={`${isRtlLanguage ? 'font-arabic text-right' : 'text-left'}`}
+                  >
+                    {line.text}
+                  </p>
                 </div>
               </div>
             );

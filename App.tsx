@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { PodcastSession, GenerationState, PodcastLength, PodcastLanguage } from './types';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { PodcastSession, GenerationState, PodcastLength, PodcastLanguage, PodcastOptions } from './types';
 import { generatePodcastScript, generatePodcastAudio, estimateTimestamps } from './services/geminiService';
-import { decodeAudioData } from './utils/audioUtils';
+import { decodeAudioData, createWavBlob } from './utils/audioUtils';
 import ApiKeyInput from './components/ApiKeyInput';
 import HistorySidebar from './components/HistorySidebar';
 import Player from './components/Player';
 import Transcript from './components/Transcript';
-import { Headphones, Sparkles, MessageSquare, Menu, X, Linkedin, Clock, Globe, ChevronDown, Check, Settings, Mic2, FileText, User, Music } from 'lucide-react';
+import { Headphones, Sparkles, MessageSquare, Menu, X, Clock, Globe, ChevronDown, Check, Settings, Mic2, FileText, User, Music, Link, Zap } from 'lucide-react';
 
 interface DropdownProps {
   value: string;
@@ -107,6 +107,9 @@ const App: React.FC = () => {
   const [host1Voice, setHost1Voice] = useState('');
   const [host2Voice, setHost2Voice] = useState('');
 
+  // Automation
+  const [webhookStatus, setWebhookStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+
   // Load state from local storage on mount
   useEffect(() => {
     const savedKey = localStorage.getItem('gemini_api_key');
@@ -127,62 +130,58 @@ const App: React.FC = () => {
     localStorage.setItem('podcast_history', JSON.stringify(history));
   }, [history]);
 
-  const handleApiKeySave = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('gemini_api_key', key);
-  };
-
-  const handleCreatePodcast = async () => {
-    if (!apiKey || !inputValue.trim()) return;
-
+  // Unified Generation Function
+  const processGeneration = useCallback(async (params: {
+    key: string;
+    text: string;
+    length: PodcastLength;
+    language: PodcastLanguage;
+    options: PodcastOptions;
+    webhookUrl?: string;
+  }) => {
     setGenerationState({ status: 'generating_script' });
-    setCurrentAudio(null); // Reset audio for new session
+    setCurrentAudio(null);
     setCurrentTime(0);
+    setWebhookStatus('idle');
 
     try {
       // 1. Generate Script
       const { title, script, lines, usedHost1, usedHost2 } = await generatePodcastScript(
-        apiKey, 
-        inputValue, 
-        length, 
-        language,
-        {
-          customTitle: customTitle.trim() || undefined,
-          customInstructions: customInstructions.trim() || undefined,
-          host1: host1.trim() || undefined,
-          host2: host2.trim() || undefined
-        }
+        params.key, 
+        params.text, 
+        params.length, 
+        params.language,
+        params.options
       );
       
       const newSession: PodcastSession = {
         id: Date.now().toString(),
         title,
-        originalText: inputValue,
+        originalText: params.text,
         script,
         scriptLines: lines,
         createdAt: Date.now(),
-        length,
-        language,
-        customTitle: customTitle.trim() || undefined,
-        customInstructions: customInstructions.trim() || undefined,
+        length: params.length,
+        language: params.language,
+        customTitle: params.options.customTitle,
+        customInstructions: params.options.customInstructions,
         host1: usedHost1,
         host2: usedHost2,
-        host1Voice: host1Voice || undefined,
-        host2Voice: host2Voice || undefined
+        host1Voice: params.options.host1Voice,
+        host2Voice: params.options.host2Voice
       };
 
       setCurrentSession(newSession);
-      // Optimistic update
       setHistory(prev => [newSession, ...prev]);
 
       // 2. Generate Audio
       setGenerationState({ status: 'generating_audio' });
       const audioData = await generatePodcastAudio(
-        apiKey, 
+        params.key, 
         script, 
-        language, 
+        params.language, 
         { host1: usedHost1, host2: usedHost2 },
-        { host1Voice: host1Voice, host2Voice: host2Voice }
+        { host1Voice: params.options.host1Voice, host2Voice: params.options.host2Voice }
       );
       
       // 3. Decode to get duration and estimate timestamps
@@ -202,17 +201,115 @@ const App: React.FC = () => {
       setHistory(prev => [finalSession, ...prev.filter(p => p.id !== finalSession.id)]); 
       setCurrentAudio(audioData);
       setGenerationState({ status: 'complete' });
-      setInputValue(''); 
-      // Reset settings
-      setShowSettings(false);
+
+      // 4. Handle Webhook (Automation)
+      if (params.webhookUrl) {
+        setWebhookStatus('sending');
+        try {
+          const wavBlob = createWavBlob(audioData);
+          const reader = new FileReader();
+          reader.readAsDataURL(wavBlob);
+          reader.onloadend = async () => {
+            const base64Audio = reader.result?.toString().split(',')[1];
+            
+            await fetch(params.webhookUrl!, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: finalSession.title,
+                script: finalSession.script,
+                duration: finalSession.duration,
+                audioBase64: base64Audio
+              })
+            });
+            setWebhookStatus('sent');
+          };
+        } catch (err) {
+          console.error("Webhook failed", err);
+          setWebhookStatus('error');
+        }
+      }
       
     } catch (error: any) {
       console.error(error);
       setGenerationState({ 
         status: 'error', 
-        error: error.message || "Failed to generate podcast. Please check your API key and try again." 
+        error: error.message || "Failed to generate podcast. Please check your API key." 
       });
     }
+  }, []);
+
+
+  // Handle URL Query Params for Automation
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const auto = params.get('auto');
+    const urlKey = params.get('key') || params.get('apiKey');
+    const urlText = params.get('text') || params.get('url') || params.get('source');
+    const urlWebhook = params.get('webhook');
+    
+    // Optional Configs
+    const urlLang = params.get('lang') as PodcastLanguage;
+    const urlLength = params.get('length') as PodcastLength;
+    const urlTitle = params.get('title');
+    const urlHost1 = params.get('host1');
+    const urlHost2 = params.get('host2');
+
+    if (urlKey) {
+      handleApiKeySave(urlKey);
+      // Clean URL to hide key
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
+    if (urlText) setInputValue(urlText);
+    if (urlLang) setLanguage(urlLang);
+    if (urlLength) setLength(urlLength);
+    if (urlTitle) setCustomTitle(urlTitle);
+
+    // Auto Trigger
+    if (auto === 'true' && urlText && (urlKey || apiKey)) {
+      const activeKey = urlKey || apiKey;
+      if (activeKey) {
+        processGeneration({
+          key: activeKey,
+          text: urlText,
+          length: urlLength || 'Medium',
+          language: urlLang || 'English',
+          options: {
+            customTitle: urlTitle || undefined,
+            host1: urlHost1 || undefined,
+            host2: urlHost2 || undefined
+          },
+          webhookUrl: urlWebhook || undefined
+        });
+      }
+    }
+  }, [processGeneration]); // Dependency array only includes stable function
+
+  const handleApiKeySave = (key: string) => {
+    setApiKey(key);
+    localStorage.setItem('gemini_api_key', key);
+  };
+
+  const onGenerateClick = () => {
+     if (!apiKey || !inputValue.trim()) return;
+     processGeneration({
+       key: apiKey,
+       text: inputValue,
+       length,
+       language,
+       options: {
+         customTitle: customTitle.trim() || undefined,
+         customInstructions: customInstructions.trim() || undefined,
+         host1: host1.trim() || undefined,
+         host2: host2.trim() || undefined,
+         host1Voice: host1Voice || undefined,
+         host2Voice: host2Voice || undefined
+       }
+     });
+     // Reset UI state
+     setInputValue('');
+     setShowSettings(false);
   };
 
   const handleRegenerateAudio = async () => {
@@ -253,12 +350,13 @@ const App: React.FC = () => {
     setCurrentSession(session);
     setCurrentAudio(null); 
     setGenerationState({ status: 'idle' });
+    setWebhookStatus('idle');
     setIsSidebarOpen(false); 
     setCurrentTime(0);
     // Restore options
     if (session.length) setLength(session.length);
     if (session.language) setLanguage(session.language);
-    // Restore customization for quick edit (optional)
+    // Restore customization
     setHost1(session.host1 || '');
     setHost2(session.host2 || '');
     setHost1Voice(session.host1Voice || '');
@@ -325,7 +423,17 @@ const App: React.FC = () => {
             <div className="bg-brand-600 rounded-lg p-1.5">
               <Headphones className="w-5 h-5 text-white" />
             </div>
-            <h1 className="font-bold text-lg tracking-tight">Listen<span className="text-brand-500">In</span></h1>
+            <h1 className="font-bold text-lg tracking-tight">Pod<span className="text-brand-500">vibe</span></h1>
+            {webhookStatus === 'sending' && (
+              <span className="flex items-center gap-1 text-xs text-brand-400 bg-brand-900/20 px-2 py-0.5 rounded-full animate-pulse">
+                <Zap className="w-3 h-3" /> Sending to Webhook...
+              </span>
+            )}
+            {webhookStatus === 'sent' && (
+              <span className="flex items-center gap-1 text-xs text-emerald-400 bg-emerald-900/20 px-2 py-0.5 rounded-full">
+                <Check className="w-3 h-3" /> Sent to Webhook
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4">
              <button 
@@ -347,7 +455,7 @@ const App: React.FC = () => {
                 <textarea
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Paste your LinkedIn post content or a link here..."
+                  placeholder="Paste your text, article content, or a link here..."
                   className="w-full h-32 bg-slate-900 text-white p-4 rounded-xl resize-none focus:outline-none placeholder-slate-600 text-base"
                 />
                 
@@ -488,11 +596,11 @@ const App: React.FC = () => {
 
                 <div className="flex justify-between items-center px-4 pb-3 pt-2 bg-slate-900/50 rounded-b-xl border-t border-slate-800/50">
                   <span className="text-xs text-slate-500 flex items-center gap-1">
-                    <Linkedin className="w-3 h-3" />
+                    <Link className="w-3 h-3" />
                     Paste text or link
                   </span>
                   <button
-                    onClick={handleCreatePodcast}
+                    onClick={onGenerateClick}
                     disabled={generationState.status.startsWith('generating') || !inputValue.trim()}
                     className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all"
                   >
@@ -551,12 +659,18 @@ const App: React.FC = () => {
             {!currentSession && history.length === 0 && (
                <div className="text-center py-12 relative z-0">
                  <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-800">
-                   <Linkedin className="w-8 h-8 text-brand-500" />
+                   <FileText className="w-8 h-8 text-brand-500" />
                  </div>
-                 <h3 className="text-lg font-semibold text-white mb-2">Ready to Listen?</h3>
+                 <h3 className="text-lg font-semibold text-white mb-2">Ready to Vibe?</h3>
                  <p className="text-slate-400 max-w-md mx-auto">
-                   Paste a LinkedIn post or link above. ListenIn uses Gemini to analyze the content and creates a dynamic 2-person podcast episode for you.
+                   Paste an article, text, or link above. Podvibe uses Gemini to analyze the content and creates a dynamic 2-person podcast episode for you.
                  </p>
+                 <div className="mt-8 p-4 bg-slate-900/50 rounded-lg border border-slate-800 max-w-sm mx-auto">
+                    <p className="text-xs text-slate-500 mb-2 font-mono">Automation API Supported</p>
+                    <code className="text-[10px] text-slate-400 block bg-black/30 p-2 rounded">
+                      ?auto=true&key=...&text=...&webhook=...
+                    </code>
+                 </div>
                </div>
             )}
 

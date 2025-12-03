@@ -8,6 +8,15 @@ export interface ScriptLine {
   endTime: number;
 }
 
+export interface PodcastOptions {
+  customTitle?: string;
+  customInstructions?: string;
+  host1?: string;
+  host2?: string;
+  host1Voice?: string;
+  host2Voice?: string;
+}
+
 export interface PodcastSession {
   id: string;
   title: string;

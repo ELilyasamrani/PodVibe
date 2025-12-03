@@ -1,6 +1,6 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 import { decodeBase64 } from "../utils/audioUtils";
-import { ScriptLine, PodcastLength, PodcastLanguage } from "../types";
+import { ScriptLine, PodcastLength, PodcastLanguage, PodcastOptions } from "../types";
 
 interface CulturalConfig {
   defaultHost1: string;
@@ -82,15 +82,6 @@ const getLanguageInstruction = (lang: PodcastLanguage) => {
     default: return "The dialogue MUST be written in English.";
   }
 };
-
-export interface PodcastOptions {
-  customTitle?: string;
-  customInstructions?: string;
-  host1?: string;
-  host2?: string;
-  host1Voice?: string;
-  host2Voice?: string;
-}
 
 export const generatePodcastScript = async (
   apiKey: string, 
