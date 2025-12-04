@@ -34,6 +34,10 @@ export interface PodcastSession {
   host2?: string;
   host1Voice?: string;
   host2Voice?: string;
+  // Optional persisted audio (base64 data URL). May be omitted for long episodes.
+  audioBase64?: string;
+  // Raw audio size in bytes (useful to decide whether audio was persisted)
+  audioSize?: number;
 }
 
 export interface SpeakerConfig {

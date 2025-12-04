@@ -1,6 +1,6 @@
 import React from 'react';
 import { PodcastSession } from '../types';
-import { History, PlayCircle, Trash2, Calendar } from 'lucide-react';
+import { History, PlayCircle, Trash2, Calendar, FileText } from 'lucide-react';
 
 interface HistorySidebarProps {
   history: PodcastSession[];
@@ -40,31 +40,43 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({ history, onSelect, onDe
           <div
             key={session.id}
             onClick={() => onSelect(session)}
-            className={`group flex flex-col p-3 rounded-lg cursor-pointer transition-all border ${
+            className={`group flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all border ${
               currentId === session.id
                 ? 'bg-slate-800 border-brand-500/50 shadow-lg shadow-brand-900/20'
                 : 'bg-transparent border-transparent hover:bg-slate-800/50 hover:border-slate-700'
             }`}
           >
-            <div className="flex justify-between items-start gap-2">
-              <h3 className={`text-sm font-medium line-clamp-2 ${currentId === session.id ? 'text-brand-300' : 'text-slate-300 group-hover:text-white'}`}>
-                {session.title}
-              </h3>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(session.id);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-slate-500 transition-opacity"
-                title="Delete"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-slate-800/40 flex items-center justify-center">
+              {session.audioBase64 ? (
+                <PlayCircle className={`w-5 h-5 ${currentId === session.id ? 'text-brand-400' : 'text-slate-300'}`} />
+              ) : (
+                <FileText className={`w-5 h-5 ${currentId === session.id ? 'text-brand-400' : 'text-slate-300'}`} />
+              )}
             </div>
-            <div className="flex items-center gap-2 mt-2 text-xs text-slate-500">
-              <Calendar className="w-3 h-3" />
-              <span>{new Date(session.createdAt).toLocaleDateString()}</span>
-              {currentId === session.id && <PlayCircle className="w-3 h-3 text-brand-400 ml-auto" />}
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start gap-2">
+                <h3 className={`text-sm font-medium line-clamp-2 ${currentId === session.id ? 'text-brand-300' : 'text-slate-300 group-hover:text-white'}`}>
+                  {session.title}
+                </h3>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(session.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-slate-500 transition-opacity"
+                  title="Delete"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2 mt-2 text-xs text-slate-500">
+                <Calendar className="w-3 h-3" />
+                <span>{new Date(session.createdAt).toLocaleDateString()}</span>
+                {session.duration && (
+                  <span className="ml-auto">{Math.floor((session.duration||0)/60)}:{String(Math.floor((session.duration||0)%60)).padStart(2,'0')}</span>
+                )}
+              </div>
             </div>
           </div>
         ))}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PodcastSession, GenerationState, PodcastLength, PodcastLanguage, PodcastOptions } from './types';
 import { generatePodcastScript, generatePodcastAudio, estimateTimestamps } from './services/geminiService';
-import { decodeAudioData, createWavBlob } from './utils/audioUtils';
+import { decodeAudioData, createWavBlob, decodeBase64 } from './utils/audioUtils';
 import ApiKeyInput from './components/ApiKeyInput';
 import HistorySidebar from './components/HistorySidebar';
 import Player from './components/Player';
@@ -191,11 +191,34 @@ const App: React.FC = () => {
       
       const linesWithTimestamps = estimateTimestamps(lines, duration);
       
-      const finalSession = { 
-        ...newSession, 
-        duration, 
-        scriptLines: linesWithTimestamps 
-      };
+          // Optionally persist audio to localStorage (only if small enough)
+          // LocalStorage size is limited — avoid saving long episodes. Use a conservative 1MB threshold.
+          let persistedAudioBase64: string | undefined = undefined;
+          const AUDIO_PERSIST_THRESHOLD = 1_000_000; // bytes
+          try {
+            if (audioData.byteLength <= AUDIO_PERSIST_THRESHOLD) {
+              const wavBlob = createWavBlob(audioData);
+              const reader = new FileReader();
+              const dataUrl: string = await new Promise((resolve, reject) => {
+                reader.onerror = () => reject(new Error('Failed to read WAV blob'));
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(wavBlob);
+              });
+              // store only base64 payload (strip data:<mime>;base64,)
+              const base64 = dataUrl.split(',')[1];
+              persistedAudioBase64 = base64;
+            }
+          } catch (e) {
+            console.warn('Could not persist audio to history', e);
+          }
+
+          const finalSession = { 
+            ...newSession, 
+            duration, 
+            scriptLines: linesWithTimestamps,
+            audioBase64: persistedAudioBase64,
+            audioSize: audioData.byteLength
+          };
 
       setCurrentSession(finalSession);
       setHistory(prev => [finalSession, ...prev.filter(p => p.id !== finalSession.id)]); 
@@ -361,6 +384,16 @@ const App: React.FC = () => {
     setHost2(session.host2 || '');
     setHost1Voice(session.host1Voice || '');
     setHost2Voice(session.host2Voice || '');
+    // If this session has persisted audio, decode and set it so the player can play immediately
+    if (session.audioBase64) {
+      try {
+        const uint8 = decodeBase64(session.audioBase64);
+        const int16 = new Int16Array(uint8.buffer);
+        setCurrentAudio(int16);
+      } catch (e) {
+        console.warn('Failed to decode persisted audio for session', e);
+      }
+    }
   };
 
   const deleteSession = (id: string) => {
