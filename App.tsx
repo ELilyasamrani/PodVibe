@@ -127,7 +127,23 @@ const App: React.FC = () => {
 
   // Save history when updated
   useEffect(() => {
-    localStorage.setItem('podcast_history', JSON.stringify(history));
+    try {
+      localStorage.setItem('podcast_history', JSON.stringify(history));
+    } catch (e) {
+      console.warn('Failed to save full history to localStorage, attempting trimmed save', e);
+      try {
+        // Remove large audio payloads and retry. This keeps metadata and script but avoids quota errors.
+        const trimmed = history.map(h => {
+          const copy = { ...h } as any;
+          if (copy.audioBase64) delete copy.audioBase64;
+          if (copy.audioSize) delete copy.audioSize;
+          return copy;
+        });
+        localStorage.setItem('podcast_history', JSON.stringify(trimmed));
+      } catch (e2) {
+        console.error('Failed to save trimmed history to localStorage', e2);
+      }
+    }
   }, [history]);
 
   // Unified Generation Function
