@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, Pause, Download, Share2, Rewind, FastForward, RotateCcw, Volume2, VolumeX, Volume1, Video, Check, Linkedin, Facebook, Twitter, Instagram, Music } from 'lucide-react';
+import { Play, Pause, Download, Share2, Rewind, FastForward, RotateCcw, Volume2, VolumeX, Volume1, Video, Check, Linkedin, Facebook, Twitter, Instagram, Music, Gauge, FileAudio, Loader2 } from 'lucide-react';
 import { createWavUrl } from '../utils/audioUtils';
 
 interface PlayerProps {
   audioPcm: Int16Array | null;
   title: string;
+  coverImage?: string;
   isGenerating: boolean;
   onRegenerateAudio: () => void;
   onTimeUpdate?: (time: number) => void;
@@ -27,10 +28,11 @@ const getSupportedMimeType = () => {
   return '';
 };
 
-const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegenerateAudio, onTimeUpdate }) => {
+const Player: React.FC<PlayerProps> = ({ audioPcm, title, coverImage, isGenerating, onRegenerateAudio, onTimeUpdate }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoCanvasRef = useRef<HTMLCanvasElement>(null); // Offscreen canvas for video recording
+  const imageRef = useRef<HTMLImageElement | null>(null);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -45,10 +47,15 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   
   const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
+  const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
+  const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'processing' | 'done'>('idle');
+  const [videoMode, setVideoMode] = useState<'teaser' | 'full'>('teaser');
+  const [isConvertingMp3, setIsConvertingMp3] = useState(false);
 
   // Setup Audio Source
   useEffect(() => {
@@ -62,6 +69,26 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
       setAudioUrl(null);
     }
   }, [audioPcm]);
+
+  // Load Cover Image
+  useEffect(() => {
+    if (coverImage) {
+      const img = new Image();
+      img.src = coverImage;
+      img.onload = () => {
+        imageRef.current = img;
+      };
+    } else {
+      imageRef.current = null;
+    }
+  }, [coverImage]);
+
+  // Update playback rate
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate;
+    }
+  }, [playbackRate]);
 
   // Setup Visualizer when playing starts
   useEffect(() => {
@@ -147,7 +174,7 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
     return () => cancelAnimationFrame(animationFrameRef.current);
   }, [isPlaying, recordingState]);
 
-  // Video Recording Loop (Teaser)
+  // Video Recording Loop (Teaser/Full)
   useEffect(() => {
     if (recordingState !== 'recording' || !videoCanvasRef.current || !analyserRef.current) return;
 
@@ -157,24 +184,45 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
     
     if (!ctx) return;
 
-    // Load logo image if possible, or just draw text
     const drawVideoFrame = () => {
       // 1. Background
-      const gradient = ctx.createLinearGradient(0, 0, vCanvas.width, vCanvas.height);
-      gradient.addColorStop(0, '#1e1b4b'); // indigo-950
-      gradient.addColorStop(1, '#020617'); // slate-950
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, vCanvas.width, vCanvas.height);
+      if (imageRef.current) {
+         // Draw Image with object-cover logic
+         const img = imageRef.current;
+         const scale = Math.max(vCanvas.width / img.width, vCanvas.height / img.height);
+         const x = (vCanvas.width / 2) - (img.width / 2) * scale;
+         const y = (vCanvas.height / 2) - (img.height / 2) * scale;
+         ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+         
+         // Dark Overlay at bottom for text readability
+         const gradient = ctx.createLinearGradient(0, vCanvas.height * 0.5, 0, vCanvas.height);
+         gradient.addColorStop(0, 'rgba(0,0,0,0)');
+         gradient.addColorStop(0.6, 'rgba(0,0,0,0.6)');
+         gradient.addColorStop(1, 'rgba(0,0,0,0.9)');
+         ctx.fillStyle = gradient;
+         ctx.fillRect(0, 0, vCanvas.width, vCanvas.height);
+      } else {
+        const gradient = ctx.createLinearGradient(0, 0, vCanvas.width, vCanvas.height);
+        gradient.addColorStop(0, '#1e1b4b'); // indigo-950
+        gradient.addColorStop(1, '#020617'); // slate-950
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, vCanvas.width, vCanvas.height);
+      }
 
       // 2. Logo Area
       ctx.fillStyle = '#6366f1'; // Brand 500 (Indigo)
       ctx.font = 'bold 60px Rubik, sans-serif';
       ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = 10;
       ctx.fillText("Podvibe", vCanvas.width / 2, 120);
+      ctx.shadowBlur = 0;
 
       // 3. Title Area
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 40px Rubik, sans-serif';
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 4;
       const maxWidth = vCanvas.width - 100;
       const words = title.split(' ');
       let line = '';
@@ -192,6 +240,7 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
         }
       }
       ctx.fillText(line, vCanvas.width/2, y);
+      ctx.shadowBlur = 0;
 
       // 4. Spectrograph
       const bufferLength = analyserRef.current!.frequencyBinCount;
@@ -210,17 +259,17 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
         x += barWidth + 2;
       }
 
-      // 5. Footer
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '24px Rubik, sans-serif';
-      ctx.fillText("AI-Generated Podcast Teaser", vCanvas.width / 2, vCanvas.height - 50);
+      // 5. Footer (Removed "AI Generated Preview" as requested)
+      // ctx.fillStyle = '#94a3b8';
+      // ctx.font = '24px Rubik, sans-serif';
+      // ctx.fillText("AI-Generated Podcast Teaser", vCanvas.width / 2, vCanvas.height - 50);
 
       frameId = requestAnimationFrame(drawVideoFrame);
     };
 
     drawVideoFrame();
     return () => cancelAnimationFrame(frameId);
-  }, [recordingState, title]);
+  }, [recordingState, title, coverImage]);
 
   // Handle Time Update
   const handleTimeUpdate = () => {
@@ -238,14 +287,15 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
   };
 
   const handleEnded = () => {
+    // If recording full video, stop when ended
+    if (recordingState === 'recording' && videoMode === 'full') {
+       stopRecording();
+    }
+    
     setIsPlaying(false);
     setCurrentTime(0);
     if (audioRef.current) {
        audioRef.current.currentTime = 0;
-    }
-    // If recording, stop it
-    if (recordingState === 'recording') {
-       stopRecording();
     }
   };
 
@@ -296,16 +346,68 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
     }
   };
 
-  const handleDownload = () => {
+  const downloadWav = () => {
     if (audioUrl) {
       const a = document.createElement('a');
       a.href = audioUrl;
       a.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.wav`;
       a.click();
+      setIsDownloadMenuOpen(false);
     }
   };
 
-  const startTeaserRecording = async () => {
+  const downloadMp3 = () => {
+    if (!audioPcm) return;
+    setIsConvertingMp3(true);
+    
+    // Defer to next tick to allow UI to update
+    setTimeout(() => {
+      try {
+        const lamejs = (window as any).lamejs;
+        if (!lamejs) {
+          alert("MP3 encoder library not loaded. Please refresh.");
+          setIsConvertingMp3(false);
+          return;
+        }
+
+        const mp3encoder = new lamejs.Mp3Encoder(1, 24000, 128); // Mono, 24kHz, 128kbps
+        const samples = audioPcm;
+        const mp3Data = [];
+        const sampleBlockSize = 1152; // Must be multiple of 576
+        
+        for (let i = 0; i < samples.length; i += sampleBlockSize) {
+          const sampleChunk = samples.subarray(i, i + sampleBlockSize);
+          const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+          if (mp3buf.length > 0) {
+            mp3Data.push(mp3buf);
+          }
+        }
+        
+        const mp3buf = mp3encoder.flush();
+        if (mp3buf.length > 0) {
+          mp3Data.push(mp3buf);
+        }
+        
+        const blob = new Blob(mp3Data, { type: 'audio/mp3' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.mp3`;
+        a.click();
+        
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        console.error("MP3 conversion failed", e);
+        alert("Failed to convert audio to MP3.");
+      } finally {
+        setIsConvertingMp3(false);
+        setIsDownloadMenuOpen(false);
+      }
+    }, 100);
+  };
+
+  const startVideoRecording = async (mode: 'teaser' | 'full') => {
     if (!audioRef.current || !videoCanvasRef.current || !destRef.current) return;
     
     const mimeType = getSupportedMimeType();
@@ -316,8 +418,9 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
 
     setIsShareMenuOpen(false);
     setRecordingState('recording');
+    setVideoMode(mode);
     
-    // Stop current playback
+    // Stop current playback & Reset
     audioRef.current.pause();
     audioRef.current.currentTime = 0;
     
@@ -333,7 +436,8 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
     
     try {
       const recorder = new MediaRecorder(combinedStream, {
-         mimeType: mimeType
+         mimeType: mimeType,
+         videoBitsPerSecond: 2500000 // 2.5 Mbps for decent quality
       });
       
       const chunks: Blob[] = [];
@@ -348,7 +452,7 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
         // Download Video
         const a = document.createElement('a');
         a.href = url;
-        a.download = `Podvibe_Teaser_${title.substring(0, 10)}.webm`;
+        a.download = `Podvibe_${mode === 'teaser' ? 'Teaser' : 'Episode'}_${title.substring(0, 10)}.webm`;
         a.click();
         
         setRecordingState('done');
@@ -364,13 +468,16 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
       videoRecorderRef.current = recorder;
       recorder.start();
       
-      // Play for 15 seconds
+      // Play audio
       audioRef.current.volume = 1; // Ensure volume for recording stream
       audioRef.current.play();
       
-      setTimeout(() => {
-        stopRecording();
-      }, 15000); // Record 15 seconds
+      if (mode === 'teaser') {
+        setTimeout(() => {
+            stopRecording();
+        }, 15000); // Record 15 seconds for teaser
+      }
+      // For 'full', we wait for onEnded event in handleEnded
 
     } catch (e) {
       console.error("Failed to start MediaRecorder:", e);
@@ -409,6 +516,11 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
     
     window.open(shareUrl, '_blank', 'width=600,height=600');
     setIsShareMenuOpen(false);
+  };
+
+  const handleSpeedChange = (rate: number) => {
+    setPlaybackRate(rate);
+    setIsSpeedMenuOpen(false);
   };
 
   const formatTime = (time: number) => {
@@ -470,8 +582,12 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
       {recordingState === 'recording' && (
         <div className="absolute inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl animate-in fade-in duration-300">
            <div className="w-16 h-16 rounded-full border-4 border-brand-500/30 border-t-brand-500 animate-spin mb-4"></div>
-           <h3 className="text-xl font-bold text-white mb-2">Creating Social Video...</h3>
-           <p className="text-slate-400 text-sm">Recording a 15s teaser. Audio will play briefly.</p>
+           <h3 className="text-xl font-bold text-white mb-2">{videoMode === 'teaser' ? 'Creating Social Teaser...' : 'Rendering Full Episode...'}</h3>
+           <p className="text-slate-400 text-sm">
+             {videoMode === 'teaser' 
+               ? 'Recording a 15s preview. Audio will play briefly.' 
+               : 'Recording entire episode. Please wait until audio finishes.'}
+           </p>
         </div>
       )}
       
@@ -483,7 +599,15 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
            </div>
            <h3 className="text-xl font-bold text-white mb-2">Video Ready!</h3>
            <p className="text-slate-400 text-sm mb-1">Downloaded to your device.</p>
-           <p className="text-slate-500 text-xs">Upload this file to Instagram or TikTok.</p>
+           <p className="text-slate-500 text-xs">Upload this file to Instagram, TikTok or LinkedIn.</p>
+        </div>
+      )}
+
+      {/* Converting MP3 Overlay */}
+      {isConvertingMp3 && (
+        <div className="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl animate-in fade-in duration-200">
+           <Loader2 className="w-10 h-10 text-brand-500 animate-spin mb-3" />
+           <p className="text-white font-medium">Converting to MP3...</p>
         </div>
       )}
 
@@ -494,13 +618,36 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
             <p className="text-sm text-brand-400 font-medium">Deep Dive Episode</p>
           </div>
           <div className="flex gap-2 relative">
-            <button
-              onClick={handleDownload}
-              className="p-2 text-slate-400 hover:text-brand-400 hover:bg-brand-900/20 rounded-lg transition-colors"
-              title="Download WAV"
-            >
-              <Download className="w-5 h-5" />
-            </button>
+            <div className="relative">
+                <button
+                onClick={() => setIsDownloadMenuOpen(!isDownloadMenuOpen)}
+                className={`p-2 rounded-lg transition-colors ${isDownloadMenuOpen ? 'text-brand-400 bg-brand-900/20' : 'text-slate-400 hover:text-brand-400 hover:bg-brand-900/20'}`}
+                title="Download"
+                >
+                <Download className="w-5 h-5" />
+                </button>
+                {isDownloadMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-20 ring-1 ring-black/50">
+                        <button 
+                            onClick={downloadWav}
+                            className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3 transition-colors"
+                        >
+                            <Music className="w-4 h-4 text-emerald-400" />
+                            <span>Download WAV</span>
+                            <span className="text-[10px] bg-emerald-900/30 text-emerald-400 px-1.5 rounded ml-auto">HQ</span>
+                        </button>
+                        <button 
+                            onClick={downloadMp3}
+                            className="w-full text-left px-4 py-3 text-sm text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3 transition-colors border-t border-slate-700/50"
+                        >
+                            <FileAudio className="w-4 h-4 text-brand-400" />
+                            <span>Download MP3</span>
+                            <span className="text-[10px] bg-brand-900/30 text-brand-400 px-1.5 rounded ml-auto">MP3</span>
+                        </button>
+                    </div>
+                )}
+            </div>
+
             <div className="relative">
               <button
                 onClick={() => setIsShareMenuOpen(!isShareMenuOpen)}
@@ -543,23 +690,21 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
                   </div>
 
                   <button 
-                    onClick={startTeaserRecording}
+                    onClick={() => startVideoRecording('teaser')}
                     className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3 transition-colors"
-                    title="Download Video for Instagram/TikTok"
+                    title="15s Preview Video"
                   >
                     <Instagram className="w-4 h-4 text-[#E4405F]" />
-                    Download Video <span className="text-[10px] opacity-50 ml-auto">(Insta)</span>
+                    Download Video <span className="text-[10px] opacity-50 ml-auto">Teaser</span>
                   </button>
-
                   <button 
-                    onClick={handleDownload}
+                    onClick={() => startVideoRecording('full')}
                     className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3 transition-colors"
-                    title="Download Audio for Spotify/Apple"
+                    title="Full Episode Video"
                   >
-                    <Music className="w-4 h-4 text-[#1DB954]" />
-                    Download Audio <span className="text-[10px] opacity-50 ml-auto">(Spotify)</span>
+                    <Video className="w-4 h-4 text-brand-400" />
+                    Download Video <span className="text-[10px] opacity-50 ml-auto">Full</span>
                   </button>
-
                 </div>
               )}
             </div>
@@ -636,34 +781,60 @@ const Player: React.FC<PlayerProps> = ({ audioPcm, title, isGenerating, onRegene
               </button>
             </div>
 
-            {/* Volume Control */}
-            <div className="flex items-center gap-2 group">
-              <button 
-                onClick={toggleMute}
-                className="text-slate-400 hover:text-white p-2 hover:bg-slate-800 rounded-full"
-              >
-                {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : volume < 0.5 ? <Volume1 className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-              </button>
-              <div className="w-24 h-1.5 bg-slate-700 rounded-full relative overflow-visible flex items-center">
-                 <div 
-                   className="h-full bg-brand-500 rounded-full absolute left-0 top-0" 
-                   style={{ width: `${isMuted ? 0 : volume * 100}%` }}
-                 />
-                 {/* Visible Thumb */}
-                 <div 
-                    className="absolute w-3 h-3 bg-white rounded-full shadow-md pointer-events-none transition-transform duration-100"
-                    style={{ left: `calc(${isMuted ? 0 : volume * 100}% - 6px)` }}
-                 />
-                 <input 
-                  type="range" 
-                  min="0" 
-                  max="1" 
-                  step="0.05"
-                  value={isMuted ? 0 : volume}
-                  onChange={handleVolumeChange}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-               />
-              </div>
+            <div className="flex items-center gap-4">
+                {/* Playback Speed */}
+                <div className="relative">
+                    <button
+                        onClick={() => setIsSpeedMenuOpen(!isSpeedMenuOpen)}
+                        className={`text-slate-400 hover:text-white p-2 rounded-full text-xs font-bold transition-colors ${isSpeedMenuOpen ? 'bg-slate-800 text-white' : 'hover:bg-slate-800'}`}
+                        title="Playback Speed"
+                    >
+                        {playbackRate}x
+                    </button>
+                    {isSpeedMenuOpen && (
+                        <div className="absolute bottom-full right-0 mb-2 w-20 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-20">
+                            {[0.75, 1, 1.25, 1.5].map((rate) => (
+                                <button
+                                    key={rate}
+                                    onClick={() => handleSpeedChange(rate)}
+                                    className={`w-full text-left px-3 py-2 text-xs transition-colors hover:bg-slate-700 ${playbackRate === rate ? 'text-brand-400 font-bold bg-slate-700/50' : 'text-slate-300'}`}
+                                >
+                                    {rate}x
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Volume Control */}
+                <div className="flex items-center gap-2 group">
+                <button 
+                    onClick={toggleMute}
+                    className="text-slate-400 hover:text-white p-2 hover:bg-slate-800 rounded-full"
+                >
+                    {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : volume < 0.5 ? <Volume1 className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                </button>
+                <div className="w-24 h-1.5 bg-slate-700 rounded-full relative overflow-visible flex items-center">
+                    <div 
+                    className="h-full bg-brand-500 rounded-full absolute left-0 top-0" 
+                    style={{ width: `${isMuted ? 0 : volume * 100}%` }}
+                    />
+                    {/* Visible Thumb */}
+                    <div 
+                        className="absolute w-3 h-3 bg-white rounded-full shadow-md pointer-events-none transition-transform duration-100"
+                        style={{ left: `calc(${isMuted ? 0 : volume * 100}% - 6px)` }}
+                    />
+                    <input 
+                    type="range" 
+                    min="0" 
+                    max="1" 
+                    step="0.05"
+                    value={isMuted ? 0 : volume}
+                    onChange={handleVolumeChange}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                </div>
+                </div>
             </div>
           </div>
         </div>

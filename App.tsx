@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PodcastSession, GenerationState, PodcastLength, PodcastLanguage, PodcastOptions } from './types';
 import { generatePodcastScript, generatePodcastAudio, estimateTimestamps } from './services/geminiService';
-import { decodeAudioData, createWavBlob, decodeBase64 } from './utils/audioUtils';
+import { decodeAudioData, createWavBlob } from './utils/audioUtils';
 import ApiKeyInput from './components/ApiKeyInput';
 import HistorySidebar from './components/HistorySidebar';
 import Player from './components/Player';
 import Transcript from './components/Transcript';
-import { Headphones, Sparkles, MessageSquare, Menu, X, Clock, Globe, ChevronDown, Check, Settings, Mic2, FileText, User, Music, Link, Zap } from 'lucide-react';
+import LandingPage from './components/LandingPage';
+import ApiDocs from './components/ApiDocs';
+import Footer from './components/Footer';
+import { Headphones, Sparkles, MessageSquare, Menu, X, Clock, Globe, ChevronDown, Check, Settings, Mic2, FileText, User, Music, Link, Zap, Code, Image as ImageIcon, Upload } from 'lucide-react';
 
 interface DropdownProps {
   value: string;
@@ -85,6 +88,13 @@ const VOICE_OPTIONS = [
 ];
 
 const App: React.FC = () => {
+  // Routing State
+  const [view, setView] = useState<'landing' | 'app' | 'api-docs'>(() => {
+    // Check for automation params to skip landing page
+    const params = new URLSearchParams(window.location.search);
+    return params.get('auto') === 'true' ? 'app' : 'landing';
+  });
+
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [history, setHistory] = useState<PodcastSession[]>([]);
   const [currentSession, setCurrentSession] = useState<PodcastSession | null>(null);
@@ -106,6 +116,7 @@ const App: React.FC = () => {
   const [host2, setHost2] = useState('');
   const [host1Voice, setHost1Voice] = useState('');
   const [host2Voice, setHost2Voice] = useState('');
+  const [coverImage, setCoverImage] = useState<string | undefined>(undefined);
 
   // Automation
   const [webhookStatus, setWebhookStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
@@ -127,23 +138,9 @@ const App: React.FC = () => {
 
   // Save history when updated
   useEffect(() => {
-    try {
-      localStorage.setItem('podcast_history', JSON.stringify(history));
-    } catch (e) {
-      console.warn('Failed to save full history to localStorage, attempting trimmed save', e);
-      try {
-        // Remove large audio payloads and retry. This keeps metadata and script but avoids quota errors.
-        const trimmed = history.map(h => {
-          const copy = { ...h } as any;
-          if (copy.audioBase64) delete copy.audioBase64;
-          if (copy.audioSize) delete copy.audioSize;
-          return copy;
-        });
-        localStorage.setItem('podcast_history', JSON.stringify(trimmed));
-      } catch (e2) {
-        console.error('Failed to save trimmed history to localStorage', e2);
-      }
-    }
+    // Note: We might want to exclude coverImage from LS if it gets too large, 
+    // but for now we store it.
+    localStorage.setItem('podcast_history', JSON.stringify(history));
   }, [history]);
 
   // Unified Generation Function
@@ -184,7 +181,8 @@ const App: React.FC = () => {
         host1: usedHost1,
         host2: usedHost2,
         host1Voice: params.options.host1Voice,
-        host2Voice: params.options.host2Voice
+        host2Voice: params.options.host2Voice,
+        coverImage: params.options.coverImage
       };
 
       setCurrentSession(newSession);
@@ -207,34 +205,11 @@ const App: React.FC = () => {
       
       const linesWithTimestamps = estimateTimestamps(lines, duration);
       
-          // Optionally persist audio to localStorage (only if small enough)
-          // LocalStorage size is limited — avoid saving long episodes. Use a conservative 1MB threshold.
-          let persistedAudioBase64: string | undefined = undefined;
-          const AUDIO_PERSIST_THRESHOLD = 1_000_000; // bytes
-          try {
-            if (audioData.byteLength <= AUDIO_PERSIST_THRESHOLD) {
-              const wavBlob = createWavBlob(audioData);
-              const reader = new FileReader();
-              const dataUrl: string = await new Promise((resolve, reject) => {
-                reader.onerror = () => reject(new Error('Failed to read WAV blob'));
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.readAsDataURL(wavBlob);
-              });
-              // store only base64 payload (strip data:<mime>;base64,)
-              const base64 = dataUrl.split(',')[1];
-              persistedAudioBase64 = base64;
-            }
-          } catch (e) {
-            console.warn('Could not persist audio to history', e);
-          }
-
-          const finalSession = { 
-            ...newSession, 
-            duration, 
-            scriptLines: linesWithTimestamps,
-            audioBase64: persistedAudioBase64,
-            audioSize: audioData.byteLength
-          };
+      const finalSession = { 
+        ...newSession, 
+        duration, 
+        scriptLines: linesWithTimestamps 
+      };
 
       setCurrentSession(finalSession);
       setHistory(prev => [finalSession, ...prev.filter(p => p.id !== finalSession.id)]); 
@@ -291,8 +266,11 @@ const App: React.FC = () => {
     const urlLang = params.get('lang') as PodcastLanguage;
     const urlLength = params.get('length') as PodcastLength;
     const urlTitle = params.get('title');
+    const urlInstructions = params.get('description') || params.get('instructions');
     const urlHost1 = params.get('host1');
     const urlHost2 = params.get('host2');
+    const urlHost1Voice = params.get('host1Voice');
+    const urlHost2Voice = params.get('host2Voice');
 
     if (urlKey) {
       handleApiKeySave(urlKey);
@@ -304,9 +282,17 @@ const App: React.FC = () => {
     if (urlLang) setLanguage(urlLang);
     if (urlLength) setLength(urlLength);
     if (urlTitle) setCustomTitle(urlTitle);
+    if (urlInstructions) setCustomInstructions(urlInstructions);
+    if (urlHost1) setHost1(urlHost1);
+    if (urlHost2) setHost2(urlHost2);
+    if (urlHost1Voice) setHost1Voice(urlHost1Voice);
+    if (urlHost2Voice) setHost2Voice(urlHost2Voice);
 
     // Auto Trigger
     if (auto === 'true' && urlText && (urlKey || apiKey)) {
+      // Force view to app if auto is true (should be handled by initial state, but double check)
+      setView('app');
+
       const activeKey = urlKey || apiKey;
       if (activeKey) {
         processGeneration({
@@ -316,18 +302,33 @@ const App: React.FC = () => {
           language: urlLang || 'English',
           options: {
             customTitle: urlTitle || undefined,
+            customInstructions: urlInstructions || undefined,
             host1: urlHost1 || undefined,
-            host2: urlHost2 || undefined
+            host2: urlHost2 || undefined,
+            host1Voice: urlHost1Voice || undefined,
+            host2Voice: urlHost2Voice || undefined,
+            // Images not supported via URL yet
           },
           webhookUrl: urlWebhook || undefined
         });
       }
     }
-  }, [processGeneration]); // Dependency array only includes stable function
+  }, [processGeneration, apiKey]); 
 
   const handleApiKeySave = (key: string) => {
     setApiKey(key);
     localStorage.setItem('gemini_api_key', key);
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCoverImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const onGenerateClick = () => {
@@ -343,7 +344,8 @@ const App: React.FC = () => {
          host1: host1.trim() || undefined,
          host2: host2.trim() || undefined,
          host1Voice: host1Voice || undefined,
-         host2Voice: host2Voice || undefined
+         host2Voice: host2Voice || undefined,
+         coverImage: coverImage
        }
      });
      // Reset UI state
@@ -400,16 +402,7 @@ const App: React.FC = () => {
     setHost2(session.host2 || '');
     setHost1Voice(session.host1Voice || '');
     setHost2Voice(session.host2Voice || '');
-    // If this session has persisted audio, decode and set it so the player can play immediately
-    if (session.audioBase64) {
-      try {
-        const uint8 = decodeBase64(session.audioBase64);
-        const int16 = new Int16Array(uint8.buffer);
-        setCurrentAudio(int16);
-      } catch (e) {
-        console.warn('Failed to decode persisted audio for session', e);
-      }
-    }
+    setCoverImage(session.coverImage);
   };
 
   const deleteSession = (id: string) => {
@@ -421,12 +414,21 @@ const App: React.FC = () => {
     }
   };
 
+  // Render Logic
+  if (view === 'api-docs') {
+    return <ApiDocs onBack={() => setView('landing')} />;
+  }
+
+  if (view === 'landing') {
+    return <LandingPage onGetStarted={() => setView('app')} onOpenApiDocs={() => setView('api-docs')} />;
+  }
+
   if (!apiKey) {
     return <ApiKeyInput onSave={handleApiKeySave} />;
   }
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
+    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* Sidebar (Desktop) */}
       <HistorySidebar 
         history={history} 
@@ -461,7 +463,7 @@ const App: React.FC = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* Header */}
-        <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-950/50 backdrop-blur-md z-10">
+        <header className="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-950/50 backdrop-blur-md z-10 shrink-0">
           <div className="flex items-center gap-3">
             <button 
               className="lg:hidden p-2 -ml-2 text-slate-400 hover:text-white"
@@ -469,10 +471,12 @@ const App: React.FC = () => {
             >
               <Menu className="w-6 h-6" />
             </button>
-            <div className="bg-brand-600 rounded-lg p-1.5">
+            <div className="bg-brand-600 rounded-lg p-1.5 cursor-pointer hover:bg-brand-500 transition-colors" onClick={() => setView('landing')}>
               <Headphones className="w-5 h-5 text-white" />
             </div>
-            <h1 className="font-bold text-lg tracking-tight">Pod<span className="text-brand-500">vibe</span></h1>
+            <h1 className="font-bold text-lg tracking-tight cursor-pointer" onClick={() => setView('landing')}>
+              Pod<span className="text-brand-500">vibe</span>
+            </h1>
             {webhookStatus === 'sending' && (
               <span className="flex items-center gap-1 text-xs text-brand-400 bg-brand-900/20 px-2 py-0.5 rounded-full animate-pulse">
                 <Zap className="w-3 h-3" /> Sending to Webhook...
@@ -486,6 +490,13 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-4">
              <button 
+                onClick={() => setView('api-docs')}
+                className="text-xs font-medium text-slate-500 hover:text-white transition-colors flex items-center gap-1"
+             >
+                <Code className="w-4 h-4" />
+                <span className="hidden sm:inline">API Docs</span>
+             </button>
+             <button 
                 onClick={() => { setApiKey(null); localStorage.removeItem('gemini_api_key'); }}
                 className="text-xs font-medium text-slate-500 hover:text-slate-300 transition-colors"
              >
@@ -494,235 +505,267 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
-          <div className="max-w-4xl mx-auto space-y-8">
-            
-            {/* Input Section */}
-            <div className="space-y-4">
-              <div className="bg-slate-900 rounded-2xl p-1 border border-slate-800 shadow-xl focus-within:ring-2 focus-within:ring-brand-500/50 transition-all z-20 relative">
-                <textarea
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Paste your text, article content, or a link here..."
-                  className="w-full h-32 bg-slate-900 text-white p-4 rounded-xl resize-none focus:outline-none placeholder-slate-600 text-base"
-                />
+        {/* Scrollable Body with Footer at bottom */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="min-h-full flex flex-col">
+            <div className="flex-1 p-4 md:p-8">
+              <div className="max-w-4xl mx-auto space-y-8">
                 
-                {/* Options Toolbar */}
-                <div className="px-4 py-3 bg-slate-900 border-t border-slate-800/50 flex flex-wrap items-center gap-4 text-sm relative z-20">
-                   
-                   <div className="w-40">
-                    <CustomDropdown 
-                        value={length}
-                        onChange={(val) => setLength(val as PodcastLength)}
-                        icon={<Clock className="w-4 h-4 text-brand-500" />}
-                        options={[
-                            { label: 'Short (~3 min)', value: 'Short' },
-                            { label: 'Medium (~5 min)', value: 'Medium' },
-                            { label: 'Long (~10 min)', value: 'Long' },
-                        ]}
+                {/* Input Section */}
+                <div className="space-y-4">
+                  <div className="bg-slate-900 rounded-2xl p-1 border border-slate-800 shadow-xl focus-within:ring-2 focus-within:ring-brand-500/50 transition-all z-20 relative">
+                    <textarea
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      placeholder="Paste your text, article content, or a link here..."
+                      className="w-full h-32 bg-slate-900 text-white p-4 rounded-xl resize-none focus:outline-none placeholder-slate-600 text-base"
                     />
-                   </div>
+                    
+                    {/* Options Toolbar */}
+                    <div className="px-4 py-3 bg-slate-900 border-t border-slate-800/50 flex flex-wrap items-center gap-4 text-sm relative z-20">
+                      
+                      <div className="w-40">
+                        <CustomDropdown 
+                            value={length}
+                            onChange={(val) => setLength(val as PodcastLength)}
+                            icon={<Clock className="w-4 h-4 text-brand-500" />}
+                            options={[
+                                { label: 'Short (~3 min)', value: 'Short' },
+                                { label: 'Medium (~5 min)', value: 'Medium' },
+                                { label: 'Long (~10 min)', value: 'Long' },
+                            ]}
+                        />
+                      </div>
 
-                   <div className="w-px h-4 bg-slate-700 hidden sm:block"></div>
+                      <div className="w-px h-4 bg-slate-700 hidden sm:block"></div>
 
-                   <div className="w-48">
-                    <CustomDropdown 
-                        value={language}
-                        onChange={(val) => setLanguage(val as PodcastLanguage)}
-                        icon={<Globe className="w-4 h-4 text-brand-500" />}
-                        options={[
-                            { label: 'English', value: 'English' },
-                            { label: 'Français', value: 'French' },
-                            { label: 'Français (Canadien)', value: 'FrenchCA' },
-                            { label: 'Moroccan Darija', value: 'Darija' },
-                            { label: 'Arabic (Fusha)', value: 'Arabic' },
-                            { label: 'Español', value: 'Spanish' },
-                            { label: 'Chinese (Mandarin)', value: 'Chinese' },
-                        ]}
-                    />
-                   </div>
+                      <div className="w-48">
+                        <CustomDropdown 
+                            value={language}
+                            onChange={(val) => setLanguage(val as PodcastLanguage)}
+                            icon={<Globe className="w-4 h-4 text-brand-500" />}
+                            options={[
+                                { label: 'English', value: 'English' },
+                                { label: 'Français', value: 'French' },
+                                { label: 'Français (Canadien)', value: 'FrenchCA' },
+                                { label: 'Moroccan Darija', value: 'Darija' },
+                                { label: 'Arabic (Fusha)', value: 'Arabic' },
+                                { label: 'Español', value: 'Spanish' },
+                                { label: 'Chinese (Mandarin)', value: 'Chinese' },
+                            ]}
+                        />
+                      </div>
 
-                   <div className="ml-auto">
-                     <button
-                        onClick={() => setShowSettings(!showSettings)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-sm font-medium ${
-                            showSettings ? 'text-brand-400 bg-brand-500/10' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                        }`}
-                     >
-                       <Settings className="w-4 h-4" />
-                       Podcast Settings
-                       <ChevronDown className={`w-3 h-3 transition-transform ${showSettings ? 'rotate-180' : ''}`} />
-                     </button>
-                   </div>
+                      <div className="ml-auto">
+                        <button
+                            onClick={() => setShowSettings(!showSettings)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-sm font-medium ${
+                                showSettings ? 'text-brand-400 bg-brand-500/10' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                            }`}
+                        >
+                          <Settings className="w-4 h-4" />
+                          Podcast Settings
+                          <ChevronDown className={`w-3 h-3 transition-transform ${showSettings ? 'rotate-180' : ''}`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Settings Panel */}
+                    {showSettings && (
+                      <div className="px-6 py-4 bg-slate-800/50 border-t border-slate-700/50 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 animate-in slide-in-from-top-2">
+                          <div className="col-span-1 md:col-span-2 space-y-2">
+                            <label className="text-xs font-semibold text-slate-400 flex items-center gap-1">
+                              <FileText className="w-3 h-3" /> Title
+                            </label>
+                            <input 
+                              type="text" 
+                              value={customTitle}
+                              onChange={(e) => setCustomTitle(e.target.value)}
+                              placeholder="Auto-generated if empty"
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600"
+                            />
+                          </div>
+
+                          {/* Host 1 Config */}
+                          <div className="space-y-3 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
+                            <div className="flex items-center gap-2 text-brand-300 border-b border-slate-800 pb-2 mb-2">
+                                <User className="w-3.5 h-3.5" />
+                                <span className="text-xs font-bold uppercase tracking-wider">Host 1 (Lead)</span>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-xs font-semibold text-slate-500">Name</label>
+                                <input 
+                                  type="text" 
+                                  value={host1}
+                                  onChange={(e) => setHost1(e.target.value)}
+                                  placeholder="e.g. Alex"
+                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <CustomDropdown 
+                                    value={host1Voice}
+                                    onChange={setHost1Voice}
+                                    icon={<Music className="w-3.5 h-3.5 text-slate-400" />}
+                                    options={VOICE_OPTIONS}
+                                    label="Voice"
+                                    placeholder="Default Voice"
+                                />
+                            </div>
+                          </div>
+
+                          {/* Host 2 Config */}
+                          <div className="space-y-3 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
+                            <div className="flex items-center gap-2 text-emerald-300 border-b border-slate-800 pb-2 mb-2">
+                                <User className="w-3.5 h-3.5" />
+                                <span className="text-xs font-bold uppercase tracking-wider">Host 2 (Expert)</span>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-xs font-semibold text-slate-500">Name</label>
+                                <input 
+                                  type="text" 
+                                  value={host2}
+                                  onChange={(e) => setHost2(e.target.value)}
+                                  placeholder="e.g. Sarah"
+                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <CustomDropdown 
+                                    value={host2Voice}
+                                    onChange={setHost2Voice}
+                                    icon={<Music className="w-3.5 h-3.5 text-slate-400" />}
+                                    options={VOICE_OPTIONS}
+                                    label="Voice"
+                                    placeholder="Default Voice"
+                                />
+                            </div>
+                          </div>
+
+                          <div className="col-span-1 md:col-span-2 space-y-2">
+                             <label className="text-xs font-semibold text-slate-400 flex items-center gap-1">
+                              <ImageIcon className="w-3 h-3" /> Cover Art (Optional)
+                            </label>
+                            <div className="flex items-center gap-4">
+                               {coverImage && (
+                                 <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-700 group">
+                                    <img src={coverImage} alt="Cover" className="w-full h-full object-cover" />
+                                    <button 
+                                      onClick={() => setCoverImage(undefined)}
+                                      className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                      <X className="w-4 h-4 text-white" />
+                                    </button>
+                                 </div>
+                               )}
+                               <label className="flex items-center justify-center px-4 py-2 border border-slate-700 rounded-lg bg-slate-900 hover:bg-slate-800 cursor-pointer text-sm text-slate-300 transition-colors gap-2">
+                                  <Upload className="w-4 h-4" />
+                                  {coverImage ? 'Change Image' : 'Upload Image'}
+                                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                               </label>
+                            </div>
+                            <p className="text-[10px] text-slate-500">Used for video generation background.</p>
+                          </div>
+
+                          <div className="col-span-1 md:col-span-2 space-y-2">
+                            <label className="text-xs font-semibold text-slate-400 flex items-center gap-1">
+                              <Mic2 className="w-3 h-3" /> Custom Instructions
+                            </label>
+                            <textarea 
+                              value={customInstructions}
+                              onChange={(e) => setCustomInstructions(e.target.value)}
+                              placeholder="e.g. Make it funny, focus on the technical details, explain like I'm 5..."
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600 h-20 resize-none"
+                            />
+                          </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center px-4 pb-3 pt-2 bg-slate-900/50 rounded-b-xl border-t border-slate-800/50">
+                      <span className="text-xs text-slate-500 flex items-center gap-1">
+                        <Link className="w-3 h-3" />
+                        Paste text or link
+                      </span>
+                      <button
+                        onClick={onGenerateClick}
+                        disabled={generationState.status.startsWith('generating') || !inputValue.trim()}
+                        className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all"
+                      >
+                        {generationState.status === 'generating_script' || generationState.status === 'generating_audio' ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            <span>Processing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            <span>Generate Podcast</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {generationState.status === 'error' && (
+                    <div className="bg-red-900/20 border border-red-900/50 text-red-200 p-4 rounded-lg text-sm">
+                      {generationState.error}
+                    </div>
+                  )}
                 </div>
 
-                {/* Settings Panel */}
-                {showSettings && (
-                   <div className="px-6 py-4 bg-slate-800/50 border-t border-slate-700/50 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 animate-in slide-in-from-top-2">
-                      <div className="col-span-1 md:col-span-2 space-y-2">
-                        <label className="text-xs font-semibold text-slate-400 flex items-center gap-1">
-                           <FileText className="w-3 h-3" /> Title
-                        </label>
-                        <input 
-                           type="text" 
-                           value={customTitle}
-                           onChange={(e) => setCustomTitle(e.target.value)}
-                           placeholder="Auto-generated if empty"
-                           className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600"
-                        />
-                      </div>
+                {/* Content Area */}
+                {currentSession && (
+                  <div className="grid grid-cols-1 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
+                    
+                    {/* Player Section */}
+                    <Player 
+                      audioPcm={currentAudio} 
+                      title={currentSession.title}
+                      coverImage={currentSession.coverImage}
+                      isGenerating={generationState.status === 'generating_audio'}
+                      onRegenerateAudio={handleRegenerateAudio}
+                      onTimeUpdate={setCurrentTime}
+                    />
 
-                      {/* Host 1 Config */}
-                      <div className="space-y-3 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
-                         <div className="flex items-center gap-2 text-brand-300 border-b border-slate-800 pb-2 mb-2">
-                            <User className="w-3.5 h-3.5" />
-                            <span className="text-xs font-bold uppercase tracking-wider">Host 1 (Lead)</span>
-                         </div>
-                         <div className="space-y-2">
-                            <label className="text-xs font-semibold text-slate-500">Name</label>
-                            <input 
-                              type="text" 
-                              value={host1}
-                              onChange={(e) => setHost1(e.target.value)}
-                              placeholder="e.g. Alex"
-                              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600"
-                            />
-                         </div>
-                         <div className="space-y-1">
-                             <CustomDropdown 
-                                value={host1Voice}
-                                onChange={setHost1Voice}
-                                icon={<Music className="w-3.5 h-3.5 text-slate-400" />}
-                                options={VOICE_OPTIONS}
-                                label="Voice"
-                                placeholder="Default Voice"
-                             />
-                         </div>
+                    {/* Transcript Section */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-slate-400 text-sm font-medium px-1">
+                        <MessageSquare className="w-4 h-4" />
+                        <span>Episode Script</span>
                       </div>
-
-                      {/* Host 2 Config */}
-                      <div className="space-y-3 p-3 bg-slate-900/50 rounded-lg border border-slate-800">
-                         <div className="flex items-center gap-2 text-emerald-300 border-b border-slate-800 pb-2 mb-2">
-                            <User className="w-3.5 h-3.5" />
-                            <span className="text-xs font-bold uppercase tracking-wider">Host 2 (Expert)</span>
-                         </div>
-                         <div className="space-y-2">
-                            <label className="text-xs font-semibold text-slate-500">Name</label>
-                            <input 
-                              type="text" 
-                              value={host2}
-                              onChange={(e) => setHost2(e.target.value)}
-                              placeholder="e.g. Sarah"
-                              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600"
-                            />
-                         </div>
-                         <div className="space-y-1">
-                             <CustomDropdown 
-                                value={host2Voice}
-                                onChange={setHost2Voice}
-                                icon={<Music className="w-3.5 h-3.5 text-slate-400" />}
-                                options={VOICE_OPTIONS}
-                                label="Voice"
-                                placeholder="Default Voice"
-                             />
-                         </div>
-                      </div>
-
-                      <div className="col-span-1 md:col-span-2 space-y-2">
-                        <label className="text-xs font-semibold text-slate-400 flex items-center gap-1">
-                           <Mic2 className="w-3 h-3" /> Custom Instructions
-                        </label>
-                        <textarea 
-                           value={customInstructions}
-                           onChange={(e) => setCustomInstructions(e.target.value)}
-                           placeholder="e.g. Make it funny, focus on the technical details, explain like I'm 5..."
-                           className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500 placeholder-slate-600 h-20 resize-none"
-                        />
-                      </div>
-                   </div>
+                      <Transcript session={currentSession} currentTime={currentTime} />
+                    </div>
+                  </div>
+                )}
+                
+                {!currentSession && history.length > 0 && (
+                  <div className="text-center py-20 opacity-50 relative z-0">
+                    <p className="text-slate-400">Select an episode from history to play</p>
+                  </div>
                 )}
 
-                <div className="flex justify-between items-center px-4 pb-3 pt-2 bg-slate-900/50 rounded-b-xl border-t border-slate-800/50">
-                  <span className="text-xs text-slate-500 flex items-center gap-1">
-                    <Link className="w-3 h-3" />
-                    Paste text or link
-                  </span>
-                  <button
-                    onClick={onGenerateClick}
-                    disabled={generationState.status.startsWith('generating') || !inputValue.trim()}
-                    className="bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all"
-                  >
-                    {generationState.status === 'generating_script' || generationState.status === 'generating_audio' ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                        <span>Processing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        <span>Generate Podcast</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-              
-              {generationState.status === 'error' && (
-                <div className="bg-red-900/20 border border-red-900/50 text-red-200 p-4 rounded-lg text-sm">
-                  {generationState.error}
-                </div>
-              )}
-            </div>
-
-            {/* Content Area */}
-            {currentSession && (
-              <div className="grid grid-cols-1 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
-                
-                {/* Player Section */}
-                <Player 
-                  audioPcm={currentAudio} 
-                  title={currentSession.title}
-                  isGenerating={generationState.status === 'generating_audio'}
-                  onRegenerateAudio={handleRegenerateAudio}
-                  onTimeUpdate={setCurrentTime}
-                />
-
-                {/* Transcript Section */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-slate-400 text-sm font-medium px-1">
-                    <MessageSquare className="w-4 h-4" />
-                    <span>Episode Script</span>
+                {!currentSession && history.length === 0 && (
+                  <div className="text-center py-12 relative z-0">
+                    <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-800">
+                      <FileText className="w-8 h-8 text-brand-500" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-white mb-2">Ready to Vibe?</h3>
+                    <p className="text-slate-400 max-w-md mx-auto">
+                      Paste an article, text, or link above. Podvibe uses Gemini to analyze the content and creates a dynamic 2-person podcast episode for you.
+                    </p>
+                    <div className="mt-8 p-4 bg-slate-900/50 rounded-lg border border-slate-800 max-w-sm mx-auto">
+                        <p className="text-xs text-slate-500 mb-2 font-mono">Automation API Supported</p>
+                        <code className="text-[10px] text-slate-400 block bg-black/30 p-2 rounded">
+                          ?auto=true&key=...&text=...&webhook=...
+                        </code>
+                    </div>
                   </div>
-                  <Transcript session={currentSession} currentTime={currentTime} />
-                </div>
+                )}
+
               </div>
-            )}
+            </div>
             
-            {!currentSession && history.length > 0 && (
-               <div className="text-center py-20 opacity-50 relative z-0">
-                 <p className="text-slate-400">Select an episode from history to play</p>
-               </div>
-            )}
-
-            {!currentSession && history.length === 0 && (
-               <div className="text-center py-12 relative z-0">
-                 <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-800">
-                   <FileText className="w-8 h-8 text-brand-500" />
-                 </div>
-                 <h3 className="text-lg font-semibold text-white mb-2">Ready to Vibe?</h3>
-                 <p className="text-slate-400 max-w-md mx-auto">
-                   Paste an article, text, or link above. Podvibe uses Gemini to analyze the content and creates a dynamic 2-person podcast episode for you.
-                 </p>
-                 <div className="mt-8 p-4 bg-slate-900/50 rounded-lg border border-slate-800 max-w-sm mx-auto">
-                    <p className="text-xs text-slate-500 mb-2 font-mono">Automation API Supported</p>
-                    <code className="text-[10px] text-slate-400 block bg-black/30 p-2 rounded">
-                      ?auto=true&key=...&text=...&webhook=...
-                    </code>
-                 </div>
-               </div>
-            )}
-
+            <Footer onOpenApiDocs={() => setView('api-docs')} />
           </div>
         </div>
       </div>
