@@ -89,7 +89,7 @@ export const generatePodcastScript = async (
   length: PodcastLength, 
   language: PodcastLanguage,
   options?: PodcastOptions
-): Promise<{ title: string; script: string; lines: ScriptLine[]; usedHost1: string; usedHost2: string }> => {
+): Promise<{ title: string; summary: string; script: string; lines: ScriptLine[]; usedHost1: string; usedHost2: string; prompt: string }> => {
   const ai = new GoogleGenAI({ apiKey });
   const config = CULTURAL_CONFIGS[language];
   
@@ -129,11 +129,13 @@ export const generatePodcastScript = async (
     - Keep it conversational, use natural fillers appropriate for the language.
     - The output MUST be a valid script format where every line starts with the speaker's name followed by a colon.
     ${options?.customTitle ? `- The title of the podcast is "${options.customTitle}".` : '- Provide a catchy title for this episode on the very first line starting with "TITLE: ".'}
+    - Provide a 3-4 sentence summary of the discussion on the second line starting with "SUMMARY: ".
     - ${getLengthInstruction(length)}
     - ${getLanguageInstruction(language)}
     
     Output Format:
     TITLE: ${options?.customTitle || "[Catchy Title]"}
+    SUMMARY: [A concise 3-4 sentence summary of the episode content]
     ${host1}: [Line]
     ${host2}: [Line]
     ...
@@ -155,11 +157,19 @@ export const generatePodcastScript = async (
   });
 
   const rawText = response.text || "";
+  
+  // Extract Metadata
   const titleMatch = rawText.match(/^TITLE:\s*(.*)/m);
   const title = titleMatch ? titleMatch[1].trim() : (options?.customTitle || "Deep Dive Episode");
   
-  // Clean up the title line from the script body
-  const script = rawText.replace(/^TITLE:.*\n?/, '').trim();
+  const summaryMatch = rawText.match(/^SUMMARY:\s*(.*)/m);
+  const summary = summaryMatch ? summaryMatch[1].trim() : "No summary available.";
+
+  // Clean up the script body by removing metadata lines
+  const script = rawText
+    .replace(/^TITLE:.*\n?/m, '')
+    .replace(/^SUMMARY:.*\n?/m, '')
+    .trim();
 
   // Parse lines
   const lines: ScriptLine[] = [];
@@ -178,7 +188,7 @@ export const generatePodcastScript = async (
     }
   }
 
-  return { title, script, lines, usedHost1: host1, usedHost2: host2 };
+  return { title, summary, script, lines, usedHost1: host1, usedHost2: host2, prompt };
 };
 
 export const generatePodcastAudio = async (

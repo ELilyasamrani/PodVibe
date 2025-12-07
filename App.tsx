@@ -9,7 +9,7 @@ import Transcript from './components/Transcript';
 import LandingPage from './components/LandingPage';
 import ApiDocs from './components/ApiDocs';
 import Footer from './components/Footer';
-import { Headphones, Sparkles, MessageSquare, Menu, X, Clock, Globe, ChevronDown, Check, Settings, Mic2, FileText, User, Music, Link, Zap, Code, Image as ImageIcon, Upload } from 'lucide-react';
+import { Headphones, Sparkles, MessageSquare, Menu, X, Clock, Globe, ChevronDown, Check, Settings, Mic2, FileText, User, Music, Link, Zap, Code, Image as ImageIcon, Upload, BookOpen } from 'lucide-react';
 
 interface DropdownProps {
   value: string;
@@ -159,7 +159,7 @@ const App: React.FC = () => {
 
     try {
       // 1. Generate Script
-      const { title, script, lines, usedHost1, usedHost2 } = await generatePodcastScript(
+      const { title, summary, script, lines, usedHost1, usedHost2, prompt } = await generatePodcastScript(
         params.key, 
         params.text, 
         params.length, 
@@ -176,13 +176,15 @@ const App: React.FC = () => {
         createdAt: Date.now(),
         length: params.length,
         language: params.language,
+        summary,
         customTitle: params.options.customTitle,
         customInstructions: params.options.customInstructions,
         host1: usedHost1,
         host2: usedHost2,
         host1Voice: params.options.host1Voice,
         host2Voice: params.options.host2Voice,
-        coverImage: params.options.coverImage
+        coverImage: params.options.coverImage,
+        fullPrompt: prompt // Save the prompt
       };
 
       setCurrentSession(newSession);
@@ -231,6 +233,7 @@ const App: React.FC = () => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 title: finalSession.title,
+                summary: finalSession.summary,
                 script: finalSession.script,
                 duration: finalSession.duration,
                 audioBase64: base64Audio
@@ -405,12 +408,22 @@ const App: React.FC = () => {
     setCoverImage(session.coverImage);
   };
 
+  const handleNewSession = () => {
+    setCurrentSession(null);
+    setCurrentAudio(null);
+    setGenerationState({ status: 'idle' });
+    setInputValue('');
+    setCustomTitle('');
+    setCustomInstructions('');
+    setCoverImage(undefined);
+    setIsSidebarOpen(false);
+  };
+
   const deleteSession = (id: string) => {
     const newHistory = history.filter(h => h.id !== id);
     setHistory(newHistory);
     if (currentSession?.id === id) {
-      setCurrentSession(null);
-      setCurrentAudio(null);
+      handleNewSession();
     }
   };
 
@@ -434,6 +447,7 @@ const App: React.FC = () => {
         history={history} 
         onSelect={loadSession} 
         onDelete={deleteSession}
+        onNewSession={handleNewSession}
         currentId={currentSession?.id} 
       />
 
@@ -452,6 +466,7 @@ const App: React.FC = () => {
                   history={history} 
                   onSelect={loadSession} 
                   onDelete={deleteSession}
+                  onNewSession={handleNewSession}
                   currentId={currentSession?.id} 
                 />
             </div>
@@ -726,6 +741,24 @@ const App: React.FC = () => {
                       onRegenerateAudio={handleRegenerateAudio}
                       onTimeUpdate={setCurrentTime}
                     />
+                    
+                    {/* Summary Section */}
+                    {currentSession.summary && (
+                      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/5 rounded-full blur-3xl -mr-16 -mt-16"></div>
+                        <div className="flex items-start gap-4 relative z-10">
+                           <div className="bg-brand-500/10 p-2.5 rounded-lg shrink-0">
+                             <BookOpen className="w-5 h-5 text-brand-400" />
+                           </div>
+                           <div className="space-y-2">
+                             <h3 className="text-white font-semibold text-sm">Episode Summary</h3>
+                             <p className="text-slate-400 text-sm leading-relaxed">
+                               {currentSession.summary}
+                             </p>
+                           </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Transcript Section */}
                     <div className="space-y-2">
@@ -738,13 +771,7 @@ const App: React.FC = () => {
                   </div>
                 )}
                 
-                {!currentSession && history.length > 0 && (
-                  <div className="text-center py-20 opacity-50 relative z-0">
-                    <p className="text-slate-400">Select an episode from history to play</p>
-                  </div>
-                )}
-
-                {!currentSession && history.length === 0 && (
+                {!currentSession && (
                   <div className="text-center py-12 relative z-0">
                     <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-800">
                       <FileText className="w-8 h-8 text-brand-500" />

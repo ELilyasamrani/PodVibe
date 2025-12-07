@@ -1,23 +1,31 @@
 import React from 'react';
 import { PodcastSession } from '../types';
-import { History, PlayCircle, Trash2, Calendar } from 'lucide-react';
+import { History, PlayCircle, Trash2, Calendar, Plus } from 'lucide-react';
 
 interface HistorySidebarProps {
   history: PodcastSession[];
   onSelect: (session: PodcastSession) => void;
   onDelete: (id: string) => void;
+  onNewSession: () => void;
   currentId?: string;
 }
 
-const HistorySidebar: React.FC<HistorySidebarProps> = ({ history, onSelect, onDelete, currentId }) => {
+const HistorySidebar: React.FC<HistorySidebarProps> = ({ history, onSelect, onDelete, onNewSession, currentId }) => {
   if (history.length === 0) {
     return (
       <div className="hidden lg:flex flex-col w-80 border-r border-slate-800 bg-slate-900/50 h-full overflow-hidden">
         <div className="p-4 border-b border-slate-800">
-           <div className="flex items-center gap-2 text-slate-400 font-semibold">
+           <div className="flex items-center gap-2 text-slate-400 font-semibold mb-4">
             <History className="w-5 h-5" />
-            <span>History</span>
+            <span>Your Library</span>
           </div>
+          <button 
+            onClick={onNewSession}
+            className="w-full flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-brand-500/10"
+          >
+            <Plus className="w-5 h-5" />
+            New Episode
+          </button>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center text-slate-600 space-y-2">
           <div className="w-12 h-12 rounded-full bg-slate-800/50 flex items-center justify-center">
@@ -31,11 +39,18 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({ history, onSelect, onDe
 
   return (
     <div className="hidden lg:flex flex-col w-80 border-r border-slate-800 bg-slate-900/50 h-full overflow-hidden">
-      <div className="p-4 border-b border-slate-800">
+      <div className="p-4 border-b border-slate-800 space-y-4">
         <div className="flex items-center gap-2 text-slate-200 font-semibold">
           <History className="w-5 h-5 text-brand-500" />
           <span>Your Library</span>
         </div>
+        <button 
+            onClick={onNewSession}
+            className="w-full flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-brand-500/10"
+          >
+            <Plus className="w-5 h-5" />
+            New Episode
+          </button>
       </div>
       <div className="overflow-y-auto flex-1 p-2 space-y-2">
         {history.map((session) => {

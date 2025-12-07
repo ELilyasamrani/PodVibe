@@ -28,6 +28,7 @@ export interface PodcastSession {
   duration?: number;
   length: PodcastLength;
   language: PodcastLanguage;
+  summary?: string;
   // Customization
   customTitle?: string;
   customInstructions?: string;
@@ -36,6 +37,7 @@ export interface PodcastSession {
   host1Voice?: string;
   host2Voice?: string;
   coverImage?: string;
+  fullPrompt?: string; // The full system prompt used for generation
 }
 
 export interface SpeakerConfig {

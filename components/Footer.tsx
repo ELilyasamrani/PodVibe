@@ -24,13 +24,13 @@ const Footer: React.FC<FooterProps> = ({ onOpenApiDocs }) => {
           <a href="https://github.com/ELilyasamrani" target="_blank" rel="noopener noreferrer" className="hover:text-brand-400 transition-colors flex items-center gap-2">
             <Github className="w-4 h-4" /> GitHub
           </a>
-          <a href="https://www.linkedin.com/in/ilyaselamrani" target="_blank" rel="noopener noreferrer" className="hover:text-brand-400 transition-colors flex items-center gap-2">
+          <a href="https://www.linkedin.com/in/ilyas-el-amrani" target="_blank" rel="noopener noreferrer" className="hover:text-brand-400 transition-colors flex items-center gap-2">
             <Linkedin className="w-4 h-4" /> LinkedIn
           </a>
         </div>
 
         <p className="text-slate-600">
-          Created by <a href="https://www.linkedin.com/in/ilyaselamrani" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-brand-400 transition-colors font-medium">Ilyas El Amrani</a>. This project is Open Source.
+          Created by <a href="https://www.linkedin.com/in/ilyas-el-amrani" target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-brand-400 transition-colors font-medium">Ilyas El Amrani</a>. Licensed under Business Source License (BSL).
         </p>
         <p className="mt-2 text-xs text-slate-700">&copy; {new Date().getFullYear()} Podvibe. All rights reserved.</p>
       </div>
