@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { PodcastSession } from '../types';
 
@@ -13,15 +14,22 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
 
   const lines = session.scriptLines || [];
 
-  // Dynamically determine host 1 and host 2 from the script
-  // Assumes the first speaker in the script is Host 1
-  const speakers = useMemo(() => {
+  // Determine host identities and their corresponding labels/roles from the session data
+  const speakerMeta = useMemo(() => {
     const unique = Array.from(new Set(lines.map(l => l.speaker)));
+    const host1Name = unique[0] || session.host1 || 'Host 1';
+    
     return {
-      host1: unique[0] || 'Host 1',
-      host2: unique[1] || 'Host 2'
+      host1: {
+        name: host1Name,
+        role: session.host1Role || 'Host'
+      },
+      host2: {
+        name: unique[1] || session.host2 || 'Expert',
+        role: session.host2Role || 'Expert'
+      }
     };
-  }, [lines]);
+  }, [lines, session]);
 
   // Find active line index
   const activeIndex = useMemo(() => {
@@ -57,7 +65,8 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
           <div className="text-slate-500 text-center py-10">No transcript available</div>
         ) : (
            lines.map((line, idx) => {
-            const isHost1 = line.speaker === speakers.host1;
+            const isHost1 = line.speaker === speakerMeta.host1.name;
+            const activeRole = isHost1 ? speakerMeta.host1.role : speakerMeta.host2.role;
             const isActive = idx === activeIndex;
             
             return (
@@ -71,10 +80,10 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
                   } ${isActive ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110 transition-transform' : ''}`}>
                     {line.speaker[0]}
                   </div>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                     isHost1 ? 'bg-brand-900/50 text-brand-300' : 'bg-emerald-900/50 text-emerald-300'
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter ${
+                     isHost1 ? 'bg-brand-900/50 text-brand-400' : 'bg-emerald-900/50 text-emerald-400'
                   }`}>
-                    {isHost1 ? 'Host' : 'Guest'}
+                    {activeRole}
                   </span>
                 </div>
 
@@ -85,11 +94,6 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
                 } ${isActive ? 'ring-1 ring-brand-500/50 bg-slate-700 shadow-lg' : ''}`}>
                   <span className="block text-xs font-semibold opacity-50 mb-1 text-left">{line.speaker}</span>
                   
-                  {/* 
-                    dir="auto" allows the browser to determine directionality per paragraph.
-                    unicodeBidi: 'plaintext' helps isolate the directionality of this specific block, 
-                    crucial for mixed Latin/Arabic (Darija). 
-                  */}
                   <p 
                     dir="auto" 
                     style={{ unicodeBidi: 'plaintext' }}

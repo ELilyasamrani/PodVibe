@@ -1,3 +1,4 @@
+
 export type PodcastLength = 'Short' | 'Medium' | 'Long';
 export type PodcastLanguage = 'English' | 'French' | 'FrenchCA' | 'Darija' | 'Arabic' | 'Spanish' | 'Chinese';
 
@@ -15,11 +16,26 @@ export interface PodcastOptions {
   host2?: string;
   host1Voice?: string;
   host2Voice?: string;
+  host1Role?: string;
+  host2Role?: string;
+  host1Description?: string;
+  host2Description?: string;
   coverImage?: string;
+  seriesContext?: string; // Additional context from a series
+}
+
+export interface PodcastSeries {
+  id: string;
+  title: string;
+  description: string;
+  coverImage?: string;
+  createdAt: number;
+  episodeIds: string[];
 }
 
 export interface PodcastSession {
   id: string;
+  seriesId?: string; // Optional link to a series
   title: string;
   originalText: string;
   script: string;
@@ -36,6 +52,10 @@ export interface PodcastSession {
   host2?: string;
   host1Voice?: string;
   host2Voice?: string;
+  host1Role?: string;
+  host2Role?: string;
+  host1Description?: string;
+  host2Description?: string;
   coverImage?: string;
   fullPrompt?: string; // The full system prompt used for generation
 }
