@@ -44,8 +44,8 @@ PodVibe converts written content into engaging, deep-dive audio conversations be
 ### Installation
 
 ```bash
-git clone https://github.com/ELilyasamrani/ListenIn.git
-cd ListenIn/ListenIn
+git clone https://github.com/ELilyasamrani/PodVibe.git
+cd PodVibe/PodVibe
 npm install
 ```
 
@@ -139,10 +139,12 @@ PodVibe exposes a **URL-based API** for headless or automated generation. When a
 ## 📁 Project Structure
 
 ```
-ListenIn/
+PodVibe/
 ├── App.tsx                 # Root app, state management, generation flow
 ├── types.ts                # TypeScript types (PodcastSession, PodcastSeries, etc.)
 ├── index.tsx               # React entry point
+├── brand /
+│   ├── Favico.ico          # Favico, the app's icon
 ├── components/
 │   ├── LandingPage.tsx     # Landing / marketing page
 │   ├── Player.tsx          # Audio player with waveform visualizer
