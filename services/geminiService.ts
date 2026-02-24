@@ -13,11 +13,11 @@ interface CulturalConfig {
 
 const CULTURAL_CONFIGS: Record<PodcastLanguage, CulturalConfig> = {
   'English': {
-    defaultHost1: "Alex",
-    defaultHost2: "Sarah",
+    defaultHost1: "Ilyas",
+    defaultHost2: "Oumaima",
     voice1: "Puck",
     voice2: "Kore",
-    context: "Silicon Valley tech podcast vibe. Energetic, global, professional but accessible. Use metaphors from the US tech scene."
+    context: "Moroccan tech podcast vibe. Energetic, global, professional but accessible. Use metaphors from the Moroccan tech scene."
   },
   'French': {
     defaultHost1: "Thomas",
@@ -37,7 +37,7 @@ const CULTURAL_CONFIGS: Record<PodcastLanguage, CulturalConfig> = {
     defaultHost1: "Mohamed Amine",
     defaultHost2: "Ikhlas",
     voice1: "Charon",
-    voice2: "Kore", 
+    voice2: "Kore",
     context: "A casual, energetic Moroccan tech talk (like GeeksBlabla). Speakers use Moroccan Darija (Arabic script) mixed with English/French technical terms (code-switching). They sound like friends chatting in a cafe in Casablanca. Use colloquialisms like 'Daba', 'Za3ma', 'Safi', 'Chouf', 'L3iba'. Tone: Insightful but fun and authentic."
   },
   'Arabic': {
@@ -98,14 +98,14 @@ const normalizeSpeakerName = (name: string): string => {
 };
 
 export const generatePodcastScript = async (
-  input: string, 
-  length: PodcastLength, 
+  input: string,
+  length: PodcastLength,
   language: PodcastLanguage,
   options?: PodcastOptions
 ): Promise<{ title: string; summary: string; script: string; lines: ScriptLine[]; usedHost1: string; usedHost2: string; prompt: string }> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const config = CULTURAL_CONFIGS[language];
-  
+
   const host1 = options?.host1 || config.defaultHost1;
   const host2 = options?.host2 || config.defaultHost2;
   const role1 = options?.host1Role || "Host";
@@ -148,7 +148,7 @@ export const generatePodcastScript = async (
     Source Material: "${input}"
     `;
   }
-    
+
   prompt += `
     Guidelines:
     - Keep it conversational, use natural fillers appropriate for the language.
@@ -181,10 +181,10 @@ export const generatePodcastScript = async (
   });
 
   const rawText = response.text || "";
-  
+
   const titleMatch = rawText.match(/^TITLE:\s*(.*)/m);
   const title = titleMatch ? titleMatch[1].trim() : (options?.customTitle || "Deep Dive Episode");
-  
+
   const summaryMatch = rawText.match(/^SUMMARY:\s*(.*)/m);
   const summary = summaryMatch ? summaryMatch[1].trim() : "No summary available.";
 
@@ -195,7 +195,7 @@ export const generatePodcastScript = async (
 
   const lines: ScriptLine[] = [];
   const rawLines = script.split('\n');
-  
+
   for (const line of rawLines) {
     const match = line.match(/^([^:]+):\s*(.*)/);
     if (match) {
@@ -242,7 +242,7 @@ export const generatePodcastAudio = async (
     const label = line.speaker === primarySpeakerLabel ? ttsLabel1 : ttsLabel2;
     return `${label}: ${line.text}`;
   }).join('\n');
-  
+
   const ttsPrompt = `TTS the following conversation between ${ttsLabel1} and ${ttsLabel2}:\n\n${cleanScriptForTTS}`;
 
   const response = await ai.models.generateContent({
@@ -255,7 +255,7 @@ export const generatePodcastAudio = async (
           speakerVoiceConfigs: [
             {
               speaker: ttsLabel1,
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: voice1Name } } 
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: voice1Name } }
             },
             {
               speaker: ttsLabel2,
@@ -268,7 +268,7 @@ export const generatePodcastAudio = async (
   });
 
   const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  
+
   if (!base64Audio) {
     throw new Error("No audio data returned from Gemini.");
   }
