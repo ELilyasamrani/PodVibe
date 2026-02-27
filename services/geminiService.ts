@@ -15,9 +15,9 @@ const CULTURAL_CONFIGS: Record<PodcastLanguage, CulturalConfig> = {
   'English': {
     defaultHost1: "Ilyas",
     defaultHost2: "Oumaima",
-    voice1: "Puck",
+    voice1: "Charon",
     voice2: "Kore",
-    context: "Moroccan tech podcast vibe. Energetic, global, professional but accessible. Use metaphors from the Moroccan tech scene."
+    context: "Moroccan podcast vibe. Energetic, global, professional but accessible. Use metaphors from the Moroccan scene reasonably."
   },
   'French': {
     defaultHost1: "Thomas",
@@ -31,14 +31,14 @@ const CULTURAL_CONFIGS: Record<PodcastLanguage, CulturalConfig> = {
     defaultHost2: "Marie-Claude",
     voice1: "Fenrir",
     voice2: "Zephyr",
-    context: "Montreal tech scene vibe. Friendly, warm, using Quebecois idioms and expressions naturally. A mix of professional and casual ('tu' vs 'vous')."
+    context: "Montreal scene vibe. Friendly, warm, using Quebecois idioms and expressions naturally. A mix of professional and casual ('tu' vs 'vous')."
   },
   'Darija': {
     defaultHost1: "Mohamed Amine",
     defaultHost2: "Ikhlas",
     voice1: "Charon",
     voice2: "Kore",
-    context: "A casual, energetic Moroccan tech talk (like GeeksBlabla). Speakers use Moroccan Darija (Arabic script) mixed with English/French technical terms (code-switching). They sound like friends chatting in a cafe in Casablanca. Use colloquialisms like 'Daba', 'Za3ma', 'Safi', 'Chouf', 'L3iba'. Tone: Insightful but fun and authentic."
+    context: "A casual, energetic Moroccan tech talk. Speakers use Moroccan Darija (Arabic script) mixed with English/French technical terms (code-switching). They sound like friends chatting in a cafe in Casablanca. Use colloquialisms like 'Daba', 'Za3ma', 'Safi', 'Chouf', 'L3iba'. Tone: Insightful but fun and authentic."
   },
   'Arabic': {
     defaultHost1: "Ahmed",
@@ -63,7 +63,10 @@ const CULTURAL_CONFIGS: Record<PodcastLanguage, CulturalConfig> = {
   }
 };
 
-const getLengthInstruction = (length: PodcastLength) => {
+const getLengthInstruction = (length: PodcastLength, duration?: number) => {
+  if (duration) {
+    return `Create a conversation that is approximately ${duration} minutes long.`;
+  }
   switch (length) {
     case 'Short': return "Keep the conversation brief and concise, around 2-3 minutes long.";
     case 'Medium': return "Keep the conversation standard length, around 5 minutes long.";
@@ -76,7 +79,7 @@ const getLanguageInstruction = (lang: PodcastLanguage) => {
   switch (lang) {
     case 'French': return "The dialogue MUST be written in French.";
     case 'FrenchCA': return "The dialogue MUST be written in French (Canadian/Quebecois standard).";
-    case 'Darija': return "The dialogue MUST be written in Moroccan Arabic (Darija) using Arabic script. It is CRITICAL to mix in English/French technical terms naturally (e.g. 'Software', 'Cloud', 'Update'). Do not translate technical terms to standard Arabic.";
+    case 'Darija': return "The dialogue MUST be written in Moroccan Arabic (Darija) using Arabic script. It is CRITICAL to mix in English/French technical terms naturally (e.g. 'Software', 'Cloud', 'Update'). Do not translate technical terms to standard Arabic unless if necessary or if they exist in arabic.";
     case 'Arabic': return "The dialogue MUST be written in Modern Standard Arabic.";
     case 'Spanish': return "The dialogue MUST be written in Spanish.";
     case 'Chinese': return "The dialogue MUST be written in Simplified Chinese.";
@@ -132,6 +135,23 @@ export const generatePodcastScript = async (
     `;
   }
 
+  if (options?.seriesHistory && options.seriesHistory.length > 0) {
+    prompt += `
+    PREVIOUS EPISODES IN THIS SERIES:
+    ${options.seriesHistory.map((h, i) => `
+    Episode ${i + 1}:
+    - Title: ${h.title}
+    - Summary: ${h.summary}
+    - Host/Guest: ${h.host1} (${h.host1Role}) and ${h.host2} (${h.host2Role})
+    `).join('\n')}
+    
+    GUIDELINES FOR CONTINUITY:
+    - Maintain the same persona and dynamic for host ${host1} and ${host2}.
+    - If a previous episode touched on a similar or related topic, acknowledge it naturally (e.g., "Last time we talked about...", "Building on our previous discussion...").
+    - Ensure the conversation feels like a continuation of a professional, ongoing series.
+    `;
+  }
+
   if (options?.customInstructions) {
     prompt += `
     Additional User Instructions: ${options.customInstructions}
@@ -149,13 +169,26 @@ export const generatePodcastScript = async (
     `;
   }
 
+  if (options?.isTranscriptInAttachments && options.attachments && options.attachments.length > 0) {
+    prompt += `
+    TRANSCRIPT MODE: The attached files contain a full transcript or dialogue. 
+    Your primary task is to adapt this dialogue into the podcast format with ${host1} and ${host2}.
+    Stay faithful to the content but make it sound natural for a podcast conversation.
+    `;
+  } else if (options?.attachments && options.attachments.length > 0) {
+    prompt += `
+    The user has attached ${options.attachments.length} file(s) for additional context. 
+    Please analyze these files (images, PDFs, documents) and incorporate relevant information into the podcast discussion.
+    `;
+  }
+
   prompt += `
     Guidelines:
     - Keep it conversational, use natural fillers appropriate for the language.
     - The output MUST be a valid script format where every line starts with the speaker's name followed by a colon.
     ${options?.customTitle ? `- The title of the podcast is "${options.customTitle}".` : '- Provide a catchy title for this episode on the very first line starting with "TITLE: ".'}
     - Provide a 3-4 sentence summary of the discussion on the second line starting with "SUMMARY: ".
-    - ${getLengthInstruction(length)}
+    - ${getLengthInstruction(length, options?.duration)}
     - ${getLanguageInstruction(language)}
     
     Output Format:
@@ -174,11 +207,32 @@ export const generatePodcastScript = async (
     requestConfig.tools = [{ googleSearch: {} }];
   }
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: prompt,
-    config: requestConfig
-  });
+  // Build multi-modal content
+  const parts: any[] = [{ text: prompt }];
+  if (options?.attachments && options.attachments.length > 0) {
+    options.attachments.forEach(attachment => {
+      parts.push({
+        inlineData: {
+          mimeType: attachment.type,
+          data: attachment.data
+        }
+      });
+    });
+  }
+
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [{ role: 'user', parts }],
+      config: requestConfig
+    });
+  } catch (err: any) {
+    console.error("Gemini Script Error:", err);
+    if (err.message?.includes('429')) throw new Error("The AI is currently busy (Too Many Requests). Please try again in a moment.");
+    if (err.message?.includes('401') || err.message?.includes('API_KEY_INVALID')) throw new Error("Invalid API Key. Please check your settings.");
+    throw new Error(`Failed to generate script: ${err.message || 'Unknown error'}`);
+  }
 
   const rawText = response.text || "";
 
@@ -245,27 +299,35 @@ export const generatePodcastAudio = async (
 
   const ttsPrompt = `TTS the following conversation between ${ttsLabel1} and ${ttsLabel2}:\n\n${cleanScriptForTTS}`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-preview-tts",
-    contents: [{ parts: [{ text: ttsPrompt }] }],
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        multiSpeakerVoiceConfig: {
-          speakerVoiceConfigs: [
-            {
-              speaker: ttsLabel1,
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: voice1Name } }
-            },
-            {
-              speaker: ttsLabel2,
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: voice2Name } }
-            }
-          ]
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: ttsPrompt }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          multiSpeakerVoiceConfig: {
+            speakerVoiceConfigs: [
+              {
+                speaker: ttsLabel1,
+                voiceConfig: { prebuiltVoiceConfig: { voiceName: voice1Name } }
+              },
+              {
+                speaker: ttsLabel2,
+                voiceConfig: { prebuiltVoiceConfig: { voiceName: voice2Name } }
+              }
+            ]
+          }
         }
       }
-    }
-  });
+    });
+  } catch (err: any) {
+    console.error("Gemini Audio Error:", err);
+    if (err.message?.includes('429')) throw new Error("The AI is currently busy with audio generation. Please try again in a moment.");
+    if (err.message?.includes('401')) throw new Error("Invalid API Key for audio generation.");
+    throw new Error(`Failed to generate audio (TTS): ${err.message || 'Unknown error'}`);
+  }
 
   const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 

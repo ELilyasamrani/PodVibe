@@ -1,6 +1,11 @@
 
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { PodcastSession } from '../types';
+import { User, Bot, UserCheck, Skull, Cat, Ghost, Smile, Glasses, Mic2, Briefcase } from 'lucide-react';
+
+const ICON_MAP: Record<string, any> = {
+  User, Bot, UserCheck, Skull, Cat, Ghost, Smile, Glasses, Mic2, Briefcase
+};
 
 interface TranscriptProps {
   session: PodcastSession;
@@ -18,15 +23,19 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
   const speakerMeta = useMemo(() => {
     const unique = Array.from(new Set(lines.map(l => l.speaker)));
     const host1Name = unique[0] || session.host1 || 'Host 1';
-    
+
     return {
       host1: {
         name: host1Name,
-        role: session.host1Role || 'Host'
+        role: session.host1Role || 'Host',
+        avatar: session.host1Avatar,
+        avatarType: session.host1AvatarType
       },
       host2: {
         name: unique[1] || session.host2 || 'Expert',
-        role: session.host2Role || 'Expert'
+        role: session.host2Role || 'Expert',
+        avatar: session.host2Avatar,
+        avatarType: session.host2AvatarType
       }
     };
   }, [lines, session]);
@@ -39,10 +48,10 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
   // Auto-scroll logic
   useEffect(() => {
     if (!scrollRef.current || isHovering || activeIndex === -1 || activeIndex === lastActiveIndex) return;
-    
+
     setLastActiveIndex(activeIndex);
     const activeElement = scrollRef.current.children[activeIndex];
-    
+
     if (activeElement) {
       activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
@@ -51,7 +60,7 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
   const isRtlLanguage = session.language === 'Darija' || session.language === 'Arabic';
 
   return (
-    <div 
+    <div
       className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col h-[500px]"
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
@@ -64,38 +73,45 @@ const Transcript: React.FC<TranscriptProps> = ({ session, currentTime = 0 }) => 
         {lines.length === 0 ? (
           <div className="text-slate-500 text-center py-10">No transcript available</div>
         ) : (
-           lines.map((line, idx) => {
+          lines.map((line, idx) => {
             const isHost1 = line.speaker === speakerMeta.host1.name;
             const activeRole = isHost1 ? speakerMeta.host1.role : speakerMeta.host2.role;
             const isActive = idx === activeIndex;
-            
+
             return (
-              <div 
-                key={idx} 
+              <div
+                key={idx}
                 className={`flex gap-3 transition-opacity duration-300 ${isHost1 ? 'flex-row' : 'flex-row-reverse'} ${isActive ? 'opacity-100 active-transcript-line' : 'opacity-60 hover:opacity-100'}`}
               >
                 <div className="flex flex-col items-center gap-1">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 shadow-lg select-none relative ${
-                    isHost1 ? 'bg-brand-600 text-white' : 'bg-emerald-600 text-white'
-                  } ${isActive ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110 transition-transform' : ''}`}>
-                    {line.speaker[0]}
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 shadow-lg select-none relative overflow-hidden ${isHost1 ? 'bg-brand-600 text-white' : 'bg-emerald-600 text-white'
+                    } ${isActive ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-110 transition-transform' : ''}`}>
+                    {(() => {
+                      const hostMeta = isHost1 ? speakerMeta.host1 : speakerMeta.host2;
+                      if (hostMeta.avatarType === 'image' && hostMeta.avatar) {
+                        return <img src={hostMeta.avatar} alt={line.speaker} className="w-full h-full object-cover" />;
+                      }
+                      if (hostMeta.avatarType === 'icon' && hostMeta.avatar) {
+                        const Icon = ICON_MAP[hostMeta.avatar] || User;
+                        return <Icon className="w-5 h-5" />;
+                      }
+                      return line.speaker[0];
+                    })()}
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter ${
-                     isHost1 ? 'bg-brand-900/50 text-brand-400' : 'bg-emerald-900/50 text-emerald-400'
-                  }`}>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter ${isHost1 ? 'bg-brand-900/50 text-brand-400' : 'bg-emerald-900/50 text-emerald-400'
+                    }`}>
                     {activeRole}
                   </span>
                 </div>
 
-                <div className={`max-w-[80%] rounded-2xl p-3 text-sm leading-relaxed transition-all duration-300 ${
-                  isHost1 
-                    ? 'bg-slate-800 text-slate-200 rounded-tl-none' 
+                <div className={`max-w-[80%] rounded-2xl p-3 text-sm leading-relaxed transition-all duration-300 ${isHost1
+                    ? 'bg-slate-800 text-slate-200 rounded-tl-none'
                     : 'bg-slate-800/50 text-slate-300 rounded-tr-none'
-                } ${isActive ? 'ring-1 ring-brand-500/50 bg-slate-700 shadow-lg' : ''}`}>
+                  } ${isActive ? 'ring-1 ring-brand-500/50 bg-slate-700 shadow-lg' : ''}`}>
                   <span className="block text-xs font-semibold opacity-50 mb-1 text-left">{line.speaker}</span>
-                  
-                  <p 
-                    dir="auto" 
+
+                  <p
+                    dir="auto"
                     style={{ unicodeBidi: 'plaintext' }}
                     className={`${isRtlLanguage ? 'font-arabic text-right' : 'text-left'}`}
                   >

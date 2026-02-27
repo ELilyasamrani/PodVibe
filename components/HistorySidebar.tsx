@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
-import { PodcastSession, PodcastSeries } from '../types';
-import { History, PlayCircle, Trash2, Calendar, Plus, Library, FolderOpen, ChevronRight, Mic2 } from 'lucide-react';
+import { PodcastSession, PodcastSeries, Persona } from '../types';
+import { History, PlayCircle, Trash2, Calendar, Plus, Library, FolderOpen, ChevronRight, Mic2, User, UserPlus, Settings } from 'lucide-react';
 
 interface HistorySidebarProps {
   history: PodcastSession[];
   series: PodcastSeries[];
+  personas: Persona[];
   onSelect: (session: PodcastSession) => void;
   onSelectSeries: (series: PodcastSeries) => void;
+  onSelectPersona: (persona: Persona) => void;
   onDelete: (id: string) => void;
   onDeleteSeries: (id: string) => void;
+  onDeletePersona: (id: string) => void;
   onNewSession: () => void;
   onNewSeries: () => void;
+  onNewPersona: () => void;
   currentId?: string;
   currentSeriesId?: string;
   isOpen?: boolean;
@@ -20,18 +24,22 @@ interface HistorySidebarProps {
 const HistorySidebar: React.FC<HistorySidebarProps> = ({
   history,
   series,
+  personas,
   onSelect,
   onSelectSeries,
+  onSelectPersona,
   onDelete,
   onDeleteSeries,
+  onDeletePersona,
   onNewSession,
   onNewSeries,
+  onNewPersona,
   currentId,
   currentSeriesId,
   isOpen,
   onClose
 }) => {
-  const [activeTab, setActiveTab] = useState<'recents' | 'programs'>('recents');
+  const [activeTab, setActiveTab] = useState<'recents' | 'programs' | 'personas'>('recents');
 
   const renderRecents = () => {
     if (history.length === 0) {
@@ -144,6 +152,60 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({
     );
   };
 
+  const renderPersonas = () => {
+    if (personas.length === 0) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-600 space-y-2 p-6 text-center">
+          <div className="w-12 h-12 rounded-full bg-slate-800/50 flex items-center justify-center">
+            <User className="w-6 h-6 opacity-50" />
+          </div>
+          <p className="text-sm">No personas yet</p>
+          <button onClick={onNewPersona} className="text-brand-400 text-xs hover:underline mt-2">Create a new persona</button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-y-auto flex-1 p-2 space-y-2">
+        {personas.map((p) => (
+          <div
+            key={p.id}
+            className="group relative flex items-center p-3 rounded-lg bg-transparent border border-transparent hover:bg-slate-800/50 hover:border-slate-700 transition-all overflow-hidden"
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeletePersona(p.id);
+              }}
+              className="absolute left-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-full opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 z-10"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <div className="flex-1 flex items-center gap-3 transition-all duration-300 group-hover:translate-x-8 min-w-0">
+              <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+                <User className="w-5 h-5 text-brand-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold text-slate-200 truncate group-hover:text-white">
+                  {p.name}
+                </h3>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold truncate">
+                  {p.role} • {p.voice}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => onSelectPersona(p)}
+              className="p-1.5 text-slate-500 hover:text-brand-400 hover:bg-brand-500/10 rounded-lg opacity-0 translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <>
       {/* Backdrop for mobile */}
@@ -186,6 +248,17 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({
               </div>
               <Plus className="w-4 h-4 opacity-50" />
             </button>
+
+            <button
+              onClick={onNewPersona}
+              className="w-full flex items-center justify-between gap-2 bg-slate-950 hover:bg-slate-900 text-slate-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-slate-800"
+            >
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-emerald-500" />
+                <span>New Persona</span>
+              </div>
+              <Plus className="w-4 h-4 opacity-30" />
+            </button>
           </div>
 
           {/* Tabs */}
@@ -202,10 +275,16 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({
             >
               Programs
             </button>
+            <button
+              onClick={() => setActiveTab('personas')}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${activeTab === 'personas' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              Personas
+            </button>
           </div>
         </div>
 
-        {activeTab === 'recents' ? renderRecents() : renderPrograms()}
+        {activeTab === 'recents' ? renderRecents() : activeTab === 'programs' ? renderPrograms() : renderPersonas()}
       </div>
     </>
   );

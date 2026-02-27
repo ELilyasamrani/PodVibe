@@ -9,6 +9,34 @@ export interface ScriptLine {
   endTime: number;
 }
 
+export interface SeriesHistory {
+  title: string;
+  summary: string;
+  host1: string;
+  host2: string;
+  host1Role: string;
+  host2Role: string;
+}
+
+export interface Persona {
+  id: string;
+  name: string;
+  role: string;
+  description: string;
+  voice: string;
+  avatar?: string;
+  avatarType?: 'icon' | 'image';
+  avatarValue?: string; // Icon name or Base64 image
+  isCustom?: boolean;
+}
+
+export interface FileAttachment {
+  name: string;
+  type: string;
+  size: number;
+  data: string; // Base64 representation
+}
+
 export interface PodcastOptions {
   customTitle?: string;
   customInstructions?: string;
@@ -22,6 +50,14 @@ export interface PodcastOptions {
   host2Description?: string;
   coverImage?: string;
   seriesContext?: string; // Additional context from a series
+  seriesHistory?: SeriesHistory[]; // Historical episodes data
+  attachments?: FileAttachment[]; // New file support
+  isTranscriptInAttachments?: boolean; // Toggle for transcript logic
+  duration?: number; // Duration in minutes (1-20)
+  host1Avatar?: string;
+  host1AvatarType?: 'icon' | 'image';
+  host2Avatar?: string;
+  host2AvatarType?: 'icon' | 'image';
 }
 
 export interface PodcastSeries {
@@ -56,6 +92,10 @@ export interface PodcastSession {
   host2Role?: string;
   host1Description?: string;
   host2Description?: string;
+  host1Avatar?: string;
+  host1AvatarType?: 'icon' | 'image';
+  host2Avatar?: string;
+  host2AvatarType?: 'icon' | 'image';
   coverImage?: string;
   fullPrompt?: string; // The full system prompt used for generation
 }
